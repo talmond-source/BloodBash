@@ -1,0 +1,1304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Blood Typing Lab: a 3D simulation of antigens, antibodies and agglutination for Mr. Almond's Forensic Science class.">
+<title>Blood Typing Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one window, three columns. Left = the sample and its antigens, centre = the 3D stage with its caption and controls, right = antibodies and results. Stacks and scrolls only on narrow screens. Single dark world by choice. */
+:root{
+  --ink:#110809;
+  --panel:#1d1012;
+  --panel-hi:#2a181b;
+  --line:rgba(255,214,200,.12);
+  --line-hi:rgba(255,214,200,.26);
+  --fg:#f5ece8;
+  --muted:#b9a39f;
+  --faint:#86716d;
+  --plasma:#e4c173;
+  --antiA:#5d95ff;
+  --antiB:#f2c53c;
+  --antiD:#46d4a5;
+  --hAg:#cfc7bf;
+  --plt:#8c7c69;
+  --danger:#ff6152;
+  --ok:#8edb9f;
+  --f-display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;
+  --f-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:12px;
+  color-scheme:dark;
+}
+html,body{height:100%;background:var(--ink);color:var(--fg)}
+body{margin:0;font:14px/1.4 var(--f-body);overflow:hidden}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--plasma);outline-offset:2px}
+
+.app{height:100%;display:grid;grid-template-columns:clamp(236px,20vw,290px) minmax(0,1fr) clamp(248px,21vw,300px);gap:12px;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.rail{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0;overflow-y:auto;scrollbar-width:thin}
+.center{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+
+#stage{position:relative;flex:1 1 auto;min-height:220px;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#1a0b0a}
+#gl{position:absolute;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#gl:active{cursor:grabbing}
+.hint{position:absolute;top:12px;left:50%;transform:translateX(-50%);font:600 11px/1 var(--f-mono);color:rgba(255,236,226,.62);letter-spacing:.06em;pointer-events:none;white-space:nowrap}
+.track{position:absolute;top:10px;left:10px;width:min(240px,calc(100% - 20px));background:rgba(29,16,18,.88);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+
+.brand .eyebrow{font:600 10.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--plasma)}
+.brand h1{font:800 23px/1.04 var(--f-display);letter-spacing:-.01em;margin:7px 0 5px;text-wrap:balance}
+.brand p{margin:0;color:var(--muted);font-size:13px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:10px;padding:3px;border-radius:10px;background:rgba(0,0,0,.3);border:1px solid var(--line)}
+.seg button{border:0;background:transparent;border-radius:7px;padding:7px 6px;font-weight:700;font-size:13px;color:var(--muted);transition:background .15s,color .15s}
+.seg button[aria-pressed="true"]{background:#7d1a1a;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,140,120,.3)}
+.step{display:flex;align-items:baseline;gap:8px;margin:0 0 9px}
+.step b{font:600 10.5px/1 var(--f-mono);color:var(--faint);letter-spacing:.08em}
+.step h2{font:700 14.5px/1.2 var(--f-display);margin:0;letter-spacing:.005em}
+
+.types{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.types button{border:1px solid var(--line);background:rgba(255,255,255,.03);border-radius:8px;padding:7px 0 6px;font:700 14px/1 var(--f-display);transition:background .15s,border-color .15s}
+.types button:hover{border-color:var(--line-hi)}
+.types button[aria-pressed="true"]{background:#7d1a1a;border-color:#d44a3e;box-shadow:inset 0 0 0 1px rgba(255,140,120,.25)}
+.agline{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;align-items:center;font-size:12px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:5px;font:600 11px/1 var(--f-mono);padding:5px 7px 5px 6px;border-radius:99px;border:1px solid var(--line);background:rgba(0,0,0,.25);color:var(--fg)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+
+.abrow{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;padding:6px 0;border-top:1px solid var(--line)}
+.abrow:first-of-type{border-top:0;padding-top:0}
+.abrow .nm{font-weight:700;font-size:13.5px}
+.abrow .sub{font-size:11.5px;color:var(--muted)}
+.glyph{width:26px;height:26px}
+.sw{position:relative;width:40px;height:23px;border-radius:99px;border:1px solid var(--line-hi);background:rgba(255,255,255,.06);transition:background .2s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--muted);transition:transform .2s,background .2s}
+.sw[aria-checked="true"]{background:color-mix(in srgb,var(--c) 45%,transparent);border-color:var(--c)}
+.sw[aria-checked="true"]::after{transform:translateX(17px);background:#fff}
+
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:12px;color:var(--muted)}
+.legend span{display:flex;gap:7px;align-items:center}
+.legend .wide{grid-column:1/-1}
+.scale{font-size:11px;color:var(--faint);margin:9px 0 0;line-height:1.4}
+.gfx{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.gfx select{border:1px solid var(--line-hi);background:var(--panel-hi);border-radius:8px;padding:5px 8px;font-size:12.5px;font-weight:700}
+
+.caption{min-height:104px}
+.caption .head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.stage-pill{display:inline-flex;align-items:center;gap:7px;font:600 10.5px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;padding:6px 9px;border-radius:99px;background:rgba(255,255,255,.06);border:1px solid var(--line-hi);white-space:nowrap}
+.stage-pill i{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.stage-pill.ok i{background:var(--ok)}
+.stage-pill.warn i{background:var(--antiB)}
+.stage-pill.bad{border-color:rgba(255,97,82,.55);color:#ffd2cc}
+.stage-pill.bad i{background:var(--danger);box-shadow:0 0 0 0 rgba(255,97,82,.6);animation:pulse 1.4s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 7px rgba(255,97,82,0)}100%{box-shadow:0 0 0 0 rgba(255,97,82,0)}}
+#stageTitle{font:700 16.5px/1.2 var(--f-display);text-wrap:balance}
+#stageText{margin:7px 0 0;font-size:13.5px;color:#e3d5d1;max-width:80ch}
+
+.card h3{font:700 14px/1.2 var(--f-display);margin:0 0 8px;letter-spacing:.01em}
+.res{display:grid;gap:5px}
+.rrow{display:grid;grid-template-columns:10px 1fr auto;gap:9px;align-items:center;font-size:13px}
+.rrow .rn{font-weight:700}
+.rs{font:600 11px/1 var(--f-mono);padding:6px 8px;border-radius:7px;border:1px solid var(--line);white-space:nowrap}
+.rs.off{color:var(--faint);border-style:dashed}
+.rs.wait{color:var(--muted)}
+.rs.neg{color:var(--ok);border-color:rgba(142,219,159,.35)}
+.rs.pos{color:#fff;background:color-mix(in srgb,var(--c) 30%,transparent);border-color:var(--c)}
+.reading{margin:9px 0 0;padding-top:9px;border-top:1px solid var(--line);font-size:13px;color:#eadcd8}
+.reading b{font-family:var(--f-display);font-size:14.5px}
+.note{margin:6px 0 0;font-size:11px;color:var(--faint);line-height:1.4}
+
+.meters{display:grid;gap:8px}
+.m{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:baseline}
+.m .k{font-size:12px;color:var(--muted)}
+.m .v{font:600 13px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.bar{grid-column:1/-1;height:5px;border-radius:9px;background:rgba(255,255,255,.07);overflow:hidden}
+.bar>i{display:block;height:100%;width:0;border-radius:9px;background:var(--c,var(--plasma));transition:width .3s}
+#spark{width:100%;height:34px;display:block;grid-column:1/-1}
+.track h3{margin-bottom:6px}
+.track dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:12.5px}
+.track dt{color:var(--muted)}
+.track dd{margin:0;font-family:var(--f-mono);font-size:12px;text-align:right}
+
+.dock{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:6px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
+.dock button{border:1px solid var(--line);background:rgba(255,255,255,.04);border-radius:9px;padding:7px 10px;font-size:13px;font-weight:700;white-space:nowrap}
+.dock button:hover{border-color:var(--line-hi)}
+.dock button[aria-pressed="true"]{background:rgba(228,193,115,.18);border-color:var(--plasma);color:#fff2d6}
+.dock .run{background:#8f1d17;border-color:#e0574a;color:#fff}
+.dock .run:hover{background:#a8251d}
+.dock .sep{width:1px;height:22px;background:var(--line)}
+.dock .grp{display:flex;gap:3px}
+.dock .grp button{padding:7px 8px;font-family:var(--f-mono);font-weight:600}
+.dock .grp.vw button{font-family:var(--f-body);font-weight:700;padding:7px 10px}
+#fail{position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center;background:var(--ink)}
+#fail div{max-width:420px}
+
+@media (max-width:1100px){ .hint{display:none} }
+@media (min-width:901px) and (max-height:700px){
+  .app{gap:10px;padding-block:10px}
+  .rail,.center{gap:8px}
+  .card{padding:10px 11px}
+  .brand p{display:none}
+  .brand h1{font-size:21px;margin:6px 0 0}
+  .seg{margin-top:8px}
+  .step{margin-bottom:7px}
+  .types button{padding:6px 0 5px}
+  .abrow{padding:4px 0}
+  .scale{font-size:10.5px}
+  .note{display:none}
+  .caption{min-height:0}
+  #stageText{font-size:13px;margin-top:5px}
+  #spark{height:26px}
+}
+@media (max-width:900px){
+  body{overflow:auto}
+  .app{display:flex;flex-direction:column;height:auto}
+  .center{order:0} .rail-r{order:1} .rail-l{order:2}
+  .rail{overflow:visible}
+  #stage{flex:none;height:56vh;min-height:300px}
+  .caption{min-height:0}
+  .dock .sep{display:none}
+}
+@media (prefers-reduced-motion:reduce){.stage-pill.bad i{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="rail rail-l" aria-label="Blood sample">
+  <div class="card brand">
+    <div class="eyebrow">Mr. Almond · Forensic Science</div>
+    <h1>Blood Typing Lab</h1>
+    <p>Mix a blood sample with anti-A, anti-B and anti-D. Watch which antibodies grab the red cells and clump them.</p>
+    <div class="seg" role="group" aria-label="Where the blood is mixed">
+      <button id="scWell" aria-pressed="true">Typing well</button>
+      <button id="scVessel" aria-pressed="false">Blood vessel</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="step"><b>01</b><h2>Blood sample</h2></div>
+    <div class="types" id="types" role="group" aria-label="Blood type of the sample"></div>
+    <div class="agline" id="agline"></div>
+  </div>
+
+  <div class="card">
+    <div class="legend">
+      <span><svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.5" fill="var(--antiA)"/></svg>A antigen</span>
+      <span><svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.5" fill="var(--antiB)"/></svg>B antigen</span>
+      <span><svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4.5" fill="var(--antiD)"/></svg>RhD protein</span>
+      <span id="lgAb"><svg class="dot" viewBox="0 0 10 10" aria-hidden="true"><g stroke="var(--fg)" stroke-width="1.3" stroke-linecap="round" fill="none"><path d="M5 5V1.4M5 5 8.4 3.9M5 5 7.1 8M5 5 2.9 8M5 5 1.6 3.9"/></g></svg>Antibody</span>
+      <span id="lgPlt" class="wide"><svg class="dot" viewBox="0 0 10 10"><path d="M1.6 4.4 3.5 2 6.6 2.7 8.7 4.1 8 6.7 5.1 8.2 2.3 7.1z" fill="var(--plt)"/></svg>Platelet</span>
+    </div>
+    <p class="scale" id="scaleTxt"></p>
+    <label class="gfx" for="quality">Graphics
+      <select id="quality">
+        <option value="auto">Auto</option>
+        <option value="high">High</option>
+        <option value="balanced">Balanced</option>
+        <option value="low">Low</option>
+      </select>
+    </label>
+  </div>
+</aside>
+
+<main class="center">
+  <div id="stage">
+    <canvas id="gl" aria-label="3D simulation of red blood cells and antibodies"></canvas>
+    <div class="hint" id="hint">DRAG TO LOOK AROUND · SCROLL TO ZOOM · CLICK A CELL TO TRACK IT</div>
+    <div class="card track" id="trackCard" hidden>
+      <h3>Tracked cell</h3>
+      <dl id="trackDl"></dl>
+    </div>
+  </div>
+  <div class="card caption" aria-live="polite">
+    <div class="head"><span class="stage-pill" id="pill"><i></i><span id="pillTxt">Starting</span></span><span id="stageTitle">Mixing</span></div>
+    <p id="stageText"></p>
+  </div>
+  <div class="dock" role="toolbar" aria-label="Simulation controls">
+    <button class="run" id="btnRun">Restart mixing</button>
+    <button id="btnPause" aria-pressed="false">Pause</button>
+    <div class="grp" role="group" aria-label="Speed">
+      <button data-sp="0.5">½×</button><button data-sp="1" aria-pressed="true">1×</button><button data-sp="2">2×</button><button data-sp="4">4×</button>
+    </div>
+    <span class="sep"></span>
+    <button id="btnFollow" aria-pressed="false">Follow a cell</button>
+    <div class="grp vw" role="group" aria-label="View"><button id="vCut" aria-pressed="true">Overview</button><button id="vIn" aria-pressed="false">Close-up</button></div>
+  </div>
+</main>
+
+<aside class="rail rail-r" aria-label="Antibodies and results">
+  <div class="card">
+    <div class="step"><b>02</b><h2>Antibodies to mix in</h2></div>
+    <div id="abrows"></div>
+  </div>
+  <div class="card">
+    <h3>Typing result</h3>
+    <div class="res" id="res"></div>
+    <p class="reading" id="reading"></p>
+    <p class="note" id="resNote" hidden>A real test puts each antibody in its own well. Here they share one, so they're color-coded.</p>
+  </div>
+  <div class="card">
+    <div class="meters">
+      <div class="m"><span class="k">Cells with antibody bound</span><span class="v" id="mBound">0%</span><div class="bar"><i id="bBound" style="--c:var(--antiA)"></i></div></div>
+      <div class="m"><span class="k">Cells stuck in clumps</span><span class="v" id="mClump">0%</span><div class="bar"><i id="bClump" style="--c:var(--antiB)"></i></div></div>
+      <div class="m"><span class="k">Largest clump</span><span class="v" id="mLargest">0 cells</span></div>
+      <div class="m" id="flowRow"><span class="k">Flow past the narrowing</span><span class="v" id="mFlow">100%</span><canvas id="spark" width="540" height="68" aria-label="Flow over time"></canvas></div>
+    </div>
+  </div>
+</aside>
+</div>
+<div id="fail" hidden><div><h2 style="font-family:var(--f-display)">3D graphics are not available</h2><p style="color:var(--muted)">This lab needs WebGL. Try Chrome or Edge with hardware acceleration turned on.</p></div></div>
+
+<script src="three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
+<script>
+(function(){
+"use strict";
+if(!window.THREE){ document.getElementById('fail').hidden=false; return; }
+const V3=THREE.Vector3, Qt=THREE.Quaternion, TAU=Math.PI*2;
+const rand=Math.random, clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
+const gauss=()=>{let u=0,v=0;while(!u)u=rand();while(!v)v=rand();return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*v);};
+
+/* ================= world geometry (1 unit = 1 µm) ================= */
+const R0=3.91;                                            // RBC radius (Evans–Fung, D = 7.82 µm)
+const VR=15, X0=-36, XT0=66, XT1=80, XC=4.2, XEND=102;    // vessel: 30 µm arteriole narrowing into a capillary
+const RW=46, WH=18, RF=RW+5, FB=-5;                       // typing well: 92 µm patch of well floor, fluid 18 µm deep
+const MAXC=260, TEXW=512;
+let SCENE='well';
+function rbcT(x){x=clamp(x,0,1);return R0*Math.sqrt(Math.max(0,1-x*x))*(0.207161+2.002558*x*x-1.122762*x*x*x*x);} // full thickness, µm
+function vesselR(x){ if(x<XT0) return VR; if(x>XT1) return XC; const t=(x-XT0)/(XT1-XT0), s=t*t*(3-2*t); return VR+(XC-VR)*s; }
+
+/* ================= renderer ================= */
+const canvas=document.getElementById('gl');
+let renderer;
+try{ renderer=new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:'high-performance',alpha:false,stencil:false}); }
+catch(e){ document.getElementById('fail').hidden=false; return; }
+const isGL2=renderer.capabilities.isWebGL2;
+const hdrOK=isGL2 && !!renderer.extensions.get('EXT_color_buffer_float');
+const rtType=hdrOK?THREE.HalfFloatType:THREE.UnsignedByteType;
+renderer.autoClear=true;
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(52,1,0.1,400);
+
+/* ---------- cell state texture: rows 0 pos, 1 quat, 2 shape, 3 flex, 4–5 contacts ---------- */
+const cellData=new Float32Array(TEXW*6*4);
+const cellTex=new THREE.DataTexture(cellData,TEXW,6,THREE.RGBAFormat,THREE.FloatType);
+cellTex.magFilter=cellTex.minFilter=THREE.NearestFilter; cellTex.generateMipmaps=false; cellTex.needsUpdate=true;
+
+const U={
+  uCam:{value:new V3()}, uLight:{value:new V3()}, uFog:{value:new THREE.Color()}, uFogD:{value:0.0135},
+  uLI:{value:1}, uTime:{value:0}, uCells:{value:cellTex}, uTexW:{value:TEXW},
+  uFogStart:{value:0}, uNear:{value:4.5}, uSimT:{value:0}, uCut:{value:0}, uCutDir:{value:new THREE.Vector2(1,0)}, uCutCos:{value:0.12},
+  uWDir:{value:new THREE.Vector2(1,0)}, uWCos:{value:Math.cos(0.8)}, uRW:{value:RW}
+};
+
+const GL_COMMON=`
+uniform vec3 uCam; uniform vec3 uLight; uniform vec3 uFog; uniform float uFogD; uniform float uLI; uniform float uTime;
+uniform float uFogStart; uniform float uNear; uniform float uCut; uniform vec2 uCutDir; uniform float uCutCos;
+vec3 fogIt(vec3 c, vec3 wp){ float d=max(0.0,length(wp-uCam)-uFogStart); float f=1.0-exp(-d*uFogD); return mix(c,uFog,f); }
+bool cutAway(vec3 wp){ return uCut>0.5 && dot(normalize(wp.yz+vec2(1e-4)),uCutDir)>uCutCos; }
+float endFade(float x){ return smoothstep(-52.0,-38.0,x)*smoothstep(132.0,116.0,x); }
+#define NEARFADE(wp) { float dc_=length(wp-uCam); if(dc_<uNear && ign(gl_FragCoord.xy)>0.15+0.85*clamp((dc_-uNear+3.3)/3.3,0.0,1.0)) discard; }
+float ign(vec2 p){ return fract(52.9829189*fract(dot(p,vec2(0.06711056,0.00583715)))); }
+float lightAtt(float d){ return uLI/(1.0+0.0011*d*d); }
+vec3 safeN(vec3 n, vec3 fb){ float l=length(n); return l>1e-5 ? n/l : fb; }   // NaN-safe: a NaN length fails the test
+`;
+const GL_CELL=`
+uniform sampler2D uCells; uniform float uTexW; uniform float uSimT;
+vec4 cf(float i,float row){ return texture2D(uCells, vec2((i+0.5)/uTexW,(row+0.5)/6.0)); }
+vec3 qrot(vec4 q, vec3 v){ return v+2.0*cross(q.xyz, cross(q.xyz,v)+q.w*v); }
+vec3 morph(vec3 p, vec4 S){ return vec3(p.x*S.y, p.y*S.z, p.z*S.y); }   // S.y in-plane squeeze, S.z thickness stretch
+// Membrane flexibility. F.z parachute (capillary), F.w bend amplitude (shear wobble);
+// K1/K2 = nearest neighbours: local direction + midplane distance, so cells flatten where they press together.
+float srelu(float s){ return 0.5*(s+sqrt(s*s+0.09)); }
+vec3 flexP(vec3 p, float id, vec4 F, vec4 K1, vec4 K2){
+  float ph=fract(sin(id*12.9898)*43758.5453)*6.2831;
+  float a0=ph+uSimT*0.35; vec2 u=vec2(cos(a0),sin(a0));
+  float a=dot(p.xz,u)/3.91, b=dot(p.xz,vec2(-u.y,u.x))/3.91;
+  p.y+=F.w*0.85*(sin(uSimT*1.7+ph)*a*a + 0.6*sin(uSimT*1.3+ph*1.7)*b*b);
+  p.y+=F.z*1.7*(1.0-dot(p.xz,p.xz)/15.29);
+  p-=K1.xyz*0.9*srelu(dot(p,K1.xyz)-K1.w);
+  p-=K2.xyz*0.9*srelu(dot(p,K2.xyz)-K2.w);
+  return p;
+}
+`;
+
+/* ---------- RBC: biconcave lathe ---------- */
+function rbcGeometry(K,seg){
+  const pts=[];
+  for(let k=0;k<=K;k++){const x=Math.sin(k/K*Math.PI/2);pts.push(new THREE.Vector2(Math.max(x*R0,1e-4),-rbcT(x)/2));}
+  for(let k=K-1;k>=0;k--){const x=Math.sin(k/K*Math.PI/2);pts.push(new THREE.Vector2(Math.max(x*R0,1e-4),rbcT(x)/2));}
+  const g=new THREE.LatheGeometry(pts,seg); g.computeVertexNormals(); return g;
+}
+const rbcBase=rbcGeometry(11,26);
+const rbcGeo=new THREE.InstancedBufferGeometry();
+rbcGeo.setIndex(rbcBase.index); rbcGeo.setAttribute('position',rbcBase.attributes.position); rbcGeo.setAttribute('normal',rbcBase.attributes.normal);
+const idxArr=new Float32Array(MAXC); for(let i=0;i<MAXC;i++) idxArr[i]=i;
+rbcGeo.setAttribute('aIdx',new THREE.InstancedBufferAttribute(idxArr,1));
+rbcGeo.instanceCount=MAXC;
+
+const rbcMat=new THREE.ShaderMaterial({
+  uniforms:{...U}, side:THREE.DoubleSide,
+  vertexShader:GL_COMMON+GL_CELL+`
+  attribute float aIdx;
+  varying vec3 vN; varying vec3 vW; varying float vThick; varying float vHL;
+  void main(){
+    vec4 P=cf(aIdx,0.0), Q=cf(aIdx,1.0), S=cf(aIdx,2.0), C=cf(aIdx,3.0), K1=cf(aIdx,4.0), K2=cf(aIdx,5.0);
+    vec3 m=morph(position,S);
+    vec3 n=normalize(vec3(normal.x/S.y,normal.y/S.z,normal.z/S.y));
+    vec3 t1=normalize(cross(n, abs(n.y)<0.9?vec3(0.0,1.0,0.0):vec3(1.0,0.0,0.0))), t2=cross(n,t1);
+    vec3 lp=flexP(m,aIdx,C,K1,K2);
+    n=normalize(cross(flexP(m+t1*0.06,aIdx,C,K1,K2)-lp, flexP(m+t2*0.06,aIdx,C,K1,K2)-lp));
+    vec3 w=P.xyz+qrot(Q,lp*(1.0-C.y));
+    vN=qrot(Q,n); vW=w; vThick=abs(m.y)*2.0; vHL=C.x;
+    gl_Position=projectionMatrix*viewMatrix*vec4(w,1.0);
+  }`,
+  fragmentShader:GL_COMMON+`
+  varying vec3 vN; varying vec3 vW; varying float vThick; varying float vHL;
+  void main(){
+    NEARFADE(vW);
+    vec3 V=normalize(uCam-vW);
+    vec3 N=safeN(vN,V); if(!gl_FrontFacing) N=-N;
+    vec3 Lv=uLight-vW; float dl=max(length(Lv),1e-3); vec3 L=Lv/dl;
+    float att=lightAtt(dl);
+    float ndl=dot(N,L);
+    vec3 alb=vec3(0.40,0.014,0.013);
+    float wrap=max(0.0,(ndl+0.5)/1.5);
+    float trans=exp(-clamp(vThick,0.0,4.0)*1.15);
+    vec3 H=normalize(L+V);
+    float spec=pow(max(dot(N,H),0.0),64.0)*0.5;
+    float fres=pow(1.0-max(dot(N,V),0.0),4.0);
+    vec3 col=att*(alb*wrap + vec3(0.62,0.07,0.05)*trans*(0.22+0.3*max(0.0,-ndl))) + spec*att*vec3(1.0,0.86,0.82);
+    col+=uFog*(alb*1.4+fres*0.55);
+    col+=vHL*(fres*vec3(1.0,0.8,0.55)*0.8+vec3(0.06,0.03,0.0));
+    gl_FragColor=vec4(fogIt(col,vW), length(vW-uCam)/160.0);
+  }`
+});
+const rbcMesh=new THREE.Mesh(rbcGeo,rbcMat); rbcMesh.frustumCulled=false; scene.add(rbcMesh);
+
+/* ================= SCENE A: blood vessel ================= */
+const wallXs=[]; for(let x=X0-16;x<=XEND+30;){ wallXs.push(x); x+=(x>XT0-6&&x<XT1+6)?0.6:1.4; }
+function tubeGeometry(radiusAt,outward){
+  const seg=80,pos=[],nor=[],uv=[],idx=[];
+  wallXs.forEach(x=>{ const R=radiusAt(x), dR=(radiusAt(x+0.05)-radiusAt(x-0.05))/0.1;
+    for(let a=0;a<=seg;a++){ const th=a/seg*TAU,c=Math.cos(th),s=Math.sin(th); pos.push(x,R*c,R*s);
+      const n=outward?new V3(-dR,c,s).normalize():new V3(dR,-c,-s).normalize(); nor.push(n.x,n.y,n.z); uv.push(a/seg,x); } });
+  for(let i=0;i<wallXs.length-1;i++)for(let a=0;a<seg;a++){ const p=i*(seg+1)+a,q=p+seg+1; idx.push(p,q,p+1,p+1,q,q+1); }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3)); g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2)); g.setIndex(idx); return g;
+}
+const PLAIN_VS=`varying vec3 vW; varying vec3 vN; varying vec2 vUv; void main(){ vW=position; vN=normal; vUv=uv; gl_Position=projectionMatrix*viewMatrix*vec4(position,1.0); }`;
+const wallMat=new THREE.ShaderMaterial({
+  uniforms:{...U}, side:THREE.DoubleSide, extensions:{derivatives:true}, vertexShader:PLAIN_VS,
+  fragmentShader:GL_COMMON+`
+  varying vec3 vW; varying vec3 vN; varying vec2 vUv;
+  vec2 h2(vec2 p){ p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
+  vec3 voro(vec2 x, float per){
+    vec2 n=floor(x), f=fract(x); float m1=8.0, m2=8.0; float id=0.0;
+    for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){
+      vec2 g=vec2(float(i),float(j)); vec2 c=n+g; c.x=mod(c.x,per);
+      vec2 o=0.5+0.38*sin(6.2831*h2(c)); vec2 r=g+o-f; float d=dot(r,r);
+      if(d<m1){ m2=m1; m1=d; id=h2(c+3.1).x; } else if(d<m2){ m2=d; }
+    }
+    return vec3(sqrt(m1),sqrt(m2),id);
+  }
+  void main(){
+    if(cutAway(vW) || ign(gl_FragCoord.xy)>endFade(vW.x)) discard;
+    vec3 v=voro(vec2(vUv.x*9.0, vUv.y/32.0),9.0);
+    float border=smoothstep(0.0,0.07,v.y-v.x), nuc=smoothstep(0.30,0.05,v.x);
+    float h=nuc*0.9-(1.0-border)*0.6+v.z*0.08;
+    vec3 N=normalize(vN);
+    vec3 dpx=dFdx(vW), dpy=dFdy(vW); float hx=dFdx(h), hy=dFdy(h);
+    vec3 r1=cross(dpy,N), r2=cross(N,dpx); float det=dot(dpx,r1);
+    N=normalize(abs(det)*N - sign(det)*(hx*r1+hy*r2)*0.55);
+    vec3 Lv=uLight-vW; float dl=length(Lv); vec3 L=Lv/dl; vec3 V=normalize(uCam-vW);
+    float att=lightAtt(dl);
+    vec3 base=mix(vec3(0.36,0.075,0.07), vec3(0.42,0.10,0.09), v.z);
+    base=mix(base, vec3(0.24,0.06,0.13), nuc*0.85)*mix(0.55,1.0,border);
+    float ndl=max(0.0,(dot(N,L)+0.3)/1.3);
+    float spec=pow(max(dot(N,normalize(L+V)),0.0),90.0)*0.9;
+    float fres=pow(1.0-max(dot(N,V),0.0),3.0);
+    vec3 col=att*(base*ndl + spec*vec3(1.0,0.9,0.86)) + uFog*(base*1.2 + fres*0.35);
+    gl_FragColor=vec4(fogIt(col,vW), length(vW-uCam)/160.0);
+  }`
+});
+const wall=new THREE.Mesh(tubeGeometry(vesselR,false),wallMat); wall.frustumCulled=false; scene.add(wall);
+const WT=x=>1.0+2.4*(vesselR(x)-XC)/(VR-XC);                  // wall thickness: ~3.4 µm arteriole, ~1 µm capillary
+const outerMat=new THREE.ShaderMaterial({
+  uniforms:{...U}, side:THREE.DoubleSide, vertexShader:PLAIN_VS,
+  fragmentShader:GL_COMMON+`varying vec3 vW; varying vec3 vN; varying vec2 vUv;
+  void main(){
+    if(cutAway(vW) || ign(gl_FragCoord.xy)>endFade(vW.x)) discard;
+    float a=vUv.x*6.2831;
+    float band=0.5+0.5*sin(vW.x*2.2+sin(a*3.0+vW.x*0.3)*1.4);
+    float fib=0.5+0.5*sin(a*40.0+vW.x*0.9);
+    vec3 base=mix(vec3(0.36,0.10,0.09),vec3(0.50,0.17,0.14),band)*mix(0.85,1.05,fib);
+    vec3 N=normalize(vN); vec3 V=normalize(uCam-vW); if(dot(N,V)<0.0) N=-N;
+    vec3 Lv=uLight-vW; float dl=length(Lv); vec3 L=Lv/dl; float att=lightAtt(dl)*0.9+0.25;
+    float spec=pow(max(dot(N,normalize(L+V)),0.0),40.0)*0.35;
+    float fres=pow(1.0-max(dot(N,V),0.0),3.0);
+    vec3 col=base*(0.18+max(0.0,dot(N,L))*att)+spec*att+fres*vec3(0.5,0.2,0.18)*0.5;
+    gl_FragColor=vec4(fogIt(col,vW), length(vW-uCam)/160.0);
+  }`});
+const shell=new THREE.Mesh(tubeGeometry(x=>vesselR(x)+WT(x),true),outerMat); shell.frustumCulled=false; scene.add(shell);
+const capMat=new THREE.ShaderMaterial({
+  uniforms:{...U}, side:THREE.DoubleSide,
+  vertexShader:`attribute float aRad; varying float vR; varying vec3 vW; varying vec3 vN; void main(){ vR=aRad; vW=position; vN=normal; gl_Position=projectionMatrix*viewMatrix*vec4(position,1.0); }`,
+  fragmentShader:GL_COMMON+`varying float vR; varying vec3 vW; varying vec3 vN;
+  void main(){
+    if(ign(gl_FragCoord.xy)>endFade(vW.x)) discard;
+    float iel=0.10+0.025*sin(vW.x*3.1);
+    vec3 intima=vec3(0.80,0.50,0.46);
+    vec3 media=mix(vec3(0.46,0.09,0.08),vec3(0.58,0.15,0.12),0.5+0.5*sin(vR*44.0+sin(vW.x*1.7)*2.0));
+    float nuc=smoothstep(0.75,0.95,0.5+0.5*sin(vW.x*1.3+vR*30.0)*sin(vR*22.0));
+    media=mix(media,vec3(0.28,0.07,0.16),nuc*0.8);
+    vec3 adv=mix(vec3(0.62,0.38,0.33),vec3(0.70,0.47,0.40),0.5+0.5*sin(vW.x*5.0+vR*17.0));
+    vec3 base= vR<iel-0.035 ? intima : (vR<iel+0.01 ? vec3(0.95,0.82,0.62) : (vR<0.72 ? media : adv));
+    vec3 N=normalize(vN); vec3 V=normalize(uCam-vW); if(dot(N,V)<0.0) N=-N;
+    vec3 Lv=uLight-vW; float dl=length(Lv); vec3 L=Lv/dl; float att=lightAtt(dl)*0.9+0.3;
+    vec3 col=base*(0.25+max(0.0,dot(N,L))*att*0.9);
+    gl_FragColor=vec4(fogIt(col,vW), length(vW-uCam)/160.0);
+  }`});
+const capGeo=new THREE.BufferGeometry();
+const capMesh=new THREE.Mesh(capGeo,capMat); capMesh.frustumCulled=false; scene.add(capMesh);
+let capPhi=1e9;
+function buildCaps(phi,alpha){
+  const pos=[],nor=[],rad=[],idx=[]; let base=0;
+  [phi+alpha,phi-alpha].forEach((th,side)=>{
+    const c=Math.cos(th),s=Math.sin(th), tn=new V3(0,-s,c).multiplyScalar(side?1:-1);
+    wallXs.forEach(x=>{ const R=vesselR(x), w=WT(x);
+      pos.push(x,R*c,R*s, x,(R+w)*c,(R+w)*s); nor.push(tn.x,tn.y,tn.z,tn.x,tn.y,tn.z); rad.push(0,1); });
+    for(let i=0;i<wallXs.length-1;i++){ const p=base+i*2; idx.push(p,p+2,p+1,p+1,p+2,p+3); }
+    base+=wallXs.length*2;
+  });
+  capGeo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  capGeo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+  capGeo.setAttribute('aRad',new THREE.Float32BufferAttribute(rad,1));
+  capGeo.setIndex(idx);
+}
+
+/* ================= SCENE B: typing well (white ceramic, opened on the viewer's side) ================= */
+const dishMat=new THREE.ShaderMaterial({
+  uniforms:{...U}, side:THREE.DoubleSide,
+  vertexShader:`varying vec3 vW; varying vec3 vN; void main(){ vW=position; vN=normal; gl_Position=projectionMatrix*viewMatrix*vec4(position,1.0); }`,
+  fragmentShader:GL_COMMON+`uniform vec2 uWDir; uniform float uWCos; uniform float uRW;
+  varying vec3 vW; varying vec3 vN;
+  float hsh(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+    return mix(mix(hsh(i),hsh(i+vec2(1.0,0.0)),f.x),mix(hsh(i+vec2(0.0,1.0)),hsh(i+vec2(1.0,1.0)),f.x),f.y); }
+  void main(){
+    if(vW.y>0.01 && dot(normalize(vW.xz+vec2(1e-4)),uWDir)>uWCos) discard;
+    vec3 N=normalize(vN); vec3 V=normalize(uCam-vW); if(dot(N,V)<0.0) N=-N;
+    vec3 Lv=uLight-vW; float dl=length(Lv); vec3 L=Lv/dl; float att=lightAtt(dl);
+    vec2 q=vW.xz+vec2(vW.y*0.7);
+    float g=vn(q*0.8)*0.55+vn(q*3.3)*0.3+vn(q*9.0)*0.15;
+    vec3 base=vec3(0.80,0.78,0.75)*(0.9+0.12*g);
+    float wet=(vW.y<0.01 && length(vW.xz)<uRW)?1.0:0.0;
+    base=mix(base, base*vec3(1.0,0.87,0.70), wet);
+    float ndl=max(0.0,dot(N,L));
+    float spec=pow(max(dot(N,normalize(L+V)),0.0), mix(28.0,140.0,wet))*mix(0.10,0.55,wet);
+    vec3 col=base*(0.30+ndl*att)+spec*att;
+    gl_FragColor=vec4(fogIt(col,vW), length(vW-uCam)/160.0);
+  }`});
+const dish=new THREE.Group(); scene.add(dish);
+{ const floor=new THREE.CircleGeometry(RF,120); floor.rotateX(-Math.PI/2);
+  const outer=new THREE.CylinderGeometry(RF,RF,WH-FB,120,1,true); outer.translate(0,(WH+FB)/2,0);
+  const inner=new THREE.CylinderGeometry(RW,RW,WH,120,1,true); inner.translate(0,WH/2,0);
+  const rim=new THREE.RingGeometry(RW,RF,120,1); rim.rotateX(-Math.PI/2); rim.translate(0,WH,0);
+  [floor,outer,inner,rim].forEach(g=>{ const m=new THREE.Mesh(g,dishMat); m.frustumCulled=false; dish.add(m); }); }
+const wCutGeo=new THREE.BufferGeometry(); const wCut=new THREE.Mesh(wCutGeo,dishMat); wCut.frustumCulled=false; dish.add(wCut);
+let wPhi=1e9;
+function buildWellCut(phi){
+  const A=Math.acos(U.uWCos.value), pos=[], nor=[];
+  [phi+A,phi-A].forEach(th=>{ const c=Math.cos(th),s=Math.sin(th), n=[-s,0,c];
+    const p=(r,y)=>[r*c,y,r*s];
+    [p(RW,0.02),p(RF,0.02),p(RF,WH),p(RW,0.02),p(RF,WH),p(RW,WH)].forEach(v=>{ pos.push(...v); nor.push(...n); }); });
+  wCutGeo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  wCutGeo.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+  wCutGeo.computeBoundingSphere();
+}
+// soft contact shadows under cells on the well floor (multiplied onto the floor)
+const shGeo=new THREE.InstancedBufferGeometry(); { const pl=new THREE.PlaneGeometry(2,2); pl.rotateX(-Math.PI/2);
+  shGeo.setIndex(pl.index); shGeo.setAttribute('position',pl.attributes.position); shGeo.setAttribute('aIdx',new THREE.InstancedBufferAttribute(idxArr,1)); shGeo.instanceCount=MAXC; }
+const shMat=new THREE.ShaderMaterial({
+  uniforms:{...U}, transparent:true, depthWrite:false,
+  blending:THREE.CustomBlending, blendEquation:THREE.AddEquation, blendSrc:THREE.ZeroFactor, blendDst:THREE.SrcColorFactor,
+  blendEquationAlpha:THREE.AddEquation, blendSrcAlpha:THREE.ZeroFactor, blendDstAlpha:THREE.OneFactor,
+  vertexShader:GL_CELL+`attribute float aIdx; varying vec2 vU; varying float vD;
+  void main(){ vec4 P=cf(aIdx,0.0); float h=max(0.0,P.y); float s=3.91*(1.2+h*0.07);
+    vU=position.xz; vD=0.55*exp(-h/6.0);
+    gl_Position=projectionMatrix*viewMatrix*vec4(P.x+position.x*s, 0.04, P.z+position.z*s, 1.0); }`,
+  fragmentShader:`varying vec2 vU; varying float vD; void main(){ float a=exp(-dot(vU,vU)*2.4)*vD; gl_FragColor=vec4(vec3(1.0-a),1.0); }`
+});
+const shMesh=new THREE.Mesh(shGeo,shMat); shMesh.frustumCulled=false; shMesh.renderOrder=5; scene.add(shMesh);
+
+/* ---------- small molecular models ---------- */
+function ball0(c,r,sy,axis){
+  const g=new THREE.IcosahedronGeometry(1,0);
+  const p=g.attributes.position,n=g.attributes.normal;
+  for(let i=0;i<p.count;i++){const v=new V3(p.getX(i),p.getY(i),p.getZ(i)).normalize();n.setXYZ(i,v.x,v.y,v.z);}
+  const q=new Qt().setFromUnitVectors(new V3(0,1,0),(axis||new V3(0,1,0)).clone().normalize());
+  g.applyMatrix4(new THREE.Matrix4().compose(c,q,new V3(r,r*(sy||1),r)));
+  return g;
+}
+function rod(a,b,r,seg){
+  const d=b.clone().sub(a), len=d.length();
+  const g=new THREE.CylinderGeometry(r,r,len,seg||5,1,true);
+  const q=new Qt().setFromUnitVectors(new V3(0,1,0),d.clone().normalize());
+  g.applyMatrix4(new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5),q,new V3(1,1,1)));
+  return g;
+}
+function merge(list){
+  const P=[],N=[];
+  list.forEach(g=>{ const ng=g.index?g.toNonIndexed():g; const p=ng.attributes.position.array,n=ng.attributes.normal.array; for(let i=0;i<p.length;i++){P.push(p[i]);N.push(n[i]);} });
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));
+  return g;
+}
+const Y=new V3(0,1,0);
+function igMGeometry(){ // ~30 nm IgM pentamer: J-chain hub, five arms, ten antigen-binding tips bent toward −Y
+  const parts=[ball0(new V3(0,0.06,0),0.11,0.65)];
+  for(let k=0;k<5;k++){
+    const a=k*TAU/5, r=new V3(Math.cos(a),0,Math.sin(a));
+    parts.push(ball0(r.clone().multiplyScalar(0.2).add(new V3(0,0.06,0)),0.085,1.3,r), ball0(r.clone().multiplyScalar(0.37),0.08,1.3,r));
+    const hinge=r.clone().multiplyScalar(0.47).add(new V3(0,-0.03,0));
+    [-1,1].forEach(s=>{
+      const d=r.clone().applyAxisAngle(Y,s*0.5).multiplyScalar(Math.cos(0.55)).add(new V3(0,-Math.sin(0.55),0)).normalize();
+      parts.push(ball0(hinge.clone().add(d.clone().multiplyScalar(0.17)),0.082,1.5,d));
+    });
+  }
+  return merge(parts);
+}
+function antigenGeometry(){ return merge([rod(new V3(0,0,0),new V3(0,0.12,0),0.022,4),ball0(new V3(0,0.17,0),0.075,1)]); }
+function plateletGeometry(){ // ~2.6 µm irregular, faceted fragment
+  const g=new THREE.IcosahedronGeometry(1,3), p=g.attributes.position, v=new V3();
+  for(let i=0;i<p.count;i++){ v.set(p.getX(i),p.getY(i),p.getZ(i)).normalize();
+    const n=0.17*Math.sin(5.3*v.x+1.1)*Math.sin(4.1*v.z+2.3)+0.11*Math.sin(9.7*v.x-6.1*v.z+0.7)+0.07*Math.sin(17.3*v.z+13.1*v.y+3.1*v.x)+0.05*Math.sin(23*v.x+19*v.z);
+    v.multiplyScalar(1+n); p.setXYZ(i,v.x*1.3,v.y*0.42,v.z*1.05); }
+  g.computeVertexNormals(); return g;
+}
+
+/* ---------- instance pools (antigens, antibodies, platelets) ---------- */
+const itemMat=new THREE.ShaderMaterial({
+  uniforms:{...U}, side:THREE.FrontSide,
+  vertexShader:GL_COMMON+GL_CELL+`
+  attribute float aCell; attribute vec3 aPos; attribute vec3 aAxis; attribute vec3 aCol; attribute vec2 aSc;
+  varying vec3 vN; varying vec3 vW; varying vec3 vC; varying float vFl;
+  mat3 basis(vec3 up, float spin){
+    vec3 a=abs(up.y)<0.95?vec3(0.0,1.0,0.0):vec3(1.0,0.0,0.0);
+    vec3 t=normalize(cross(a,up)); vec3 b=cross(up,t);
+    float c=cos(spin), s=sin(spin); vec3 t2=t*c+b*s; vec3 b2=cross(t2,up);
+    return mat3(t2,up,b2);
+  }
+  void main(){
+    vec3 up=normalize(aAxis+vec3(1e-5));
+    float spin=fract(sin(dot(aPos,vec3(12.9898,78.233,37.719)))*43758.5453)*6.2831;
+    mat3 B=basis(up,spin);
+    vec3 lp=B*(position*aSc.x); vec3 ln=B*normal;
+    vec3 w; vec3 n;
+    if(aCell<0.0){ w=aPos+lp; n=ln; }
+    else{
+      vec4 P=cf(aCell,0.0), Q=cf(aCell,1.0), S=cf(aCell,2.0), C=cf(aCell,3.0), K1=cf(aCell,4.0), K2=cf(aCell,5.0);
+      vec3 anc=flexP(morph(aPos,S),aCell,C,K1,K2);
+      w=P.xyz+qrot(Q,(anc+lp)*(1.0-C.y)); n=qrot(Q,ln);
+    }
+    vN=n; vW=w; vC=aCol; vFl=aSc.y;
+    gl_Position=projectionMatrix*viewMatrix*vec4(w,1.0);
+  }`,
+  fragmentShader:GL_COMMON+`
+  varying vec3 vN; varying vec3 vW; varying vec3 vC; varying float vFl;
+  void main(){
+    NEARFADE(vW);
+    vec3 V=normalize(uCam-vW); vec3 N=safeN(vN,V); vec3 Lv=uLight-vW; float dl=max(length(Lv),1e-3); vec3 L=Lv/dl;
+    float att=lightAtt(dl);
+    float wrap=max(0.0,(dot(N,L)+0.4)/1.4);
+    float spec=pow(max(dot(N,normalize(L+V)),0.0),40.0)*0.6;
+    float fres=pow(1.0-max(dot(N,V),0.0),3.0);
+    vec3 col=vC*(0.28+wrap*att*0.85) + spec*att + vC*fres*0.6 + vC*vFl*4.0;
+    gl_FragColor=vec4(fogIt(col,vW), length(vW-uCam)/160.0);
+  }`
+});
+class Pool{
+  constructor(geo,cap){
+    this.cap=cap;
+    const g=new THREE.InstancedBufferGeometry();
+    if(geo.index) g.setIndex(geo.index);
+    g.setAttribute('position',geo.attributes.position); g.setAttribute('normal',geo.attributes.normal);
+    const mk=(n,s)=>{const a=new THREE.InstancedBufferAttribute(new Float32Array(cap*s),s); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(n,a); return a;};
+    this.cell=mk('aCell',1); this.pos=mk('aPos',3); this.axis=mk('aAxis',3); this.col=mk('aCol',3); this.sc=mk('aSc',2);
+    this.cell.array.fill(-1);
+    g.instanceCount=0; this.g=g;
+    this.used=new Uint8Array(cap); this.hi=0; this.n=0;
+    this.mesh=new THREE.Mesh(g,itemMat); this.mesh.frustumCulled=false; scene.add(this.mesh);
+  }
+  alloc(){ for(let i=0;i<this.cap;i++) if(!this.used[i]){ this.used[i]=1; this.n++; if(i+1>this.hi){this.hi=i+1; this.g.instanceCount=this.hi;} return i; } return -1; }
+  free(i){ if(i<0||!this.used[i]) return; this.used[i]=0; this.n--; this.sc.array[i*2]=0; this.sc.array[i*2+1]=0; while(this.hi>0&&!this.used[this.hi-1]) this.hi--; this.g.instanceCount=this.hi; }
+  clear(){ this.used.fill(0); this.hi=0; this.n=0; this.g.instanceCount=0; this.sc.array.fill(0); }
+  set(i,cell,p,ax,c,s,fl){ this.dirtyAll=true; const P=this.pos.array,A=this.axis.array,C=this.col.array,S=this.sc.array;
+    this.cell.array[i]=cell; P[i*3]=p.x;P[i*3+1]=p.y;P[i*3+2]=p.z; A[i*3]=ax.x;A[i*3+1]=ax.y;A[i*3+2]=ax.z;
+    if(c){C[i*3]=c[0];C[i*3+1]=c[1];C[i*3+2]=c[2];} S[i*2]=s; S[i*2+1]=fl||0; }
+  setP(i,p,ax){ const P=this.pos.array,A=this.axis.array; P[i*3]=p.x;P[i*3+1]=p.y;P[i*3+2]=p.z; A[i*3]=ax.x;A[i*3+1]=ax.y;A[i*3+2]=ax.z; }
+  upload(all){ this.pos.needsUpdate=true; this.axis.needsUpdate=true; this.sc.needsUpdate=true; if(all||this.dirtyAll){ this.cell.needsUpdate=true; this.col.needsUpdate=true; this.dirtyAll=false; } }
+}
+const COL={A:[0.22,0.45,1.25],B:[1.25,0.85,0.12],D:[0.2,1.05,0.68],H:[0.55,0.52,0.48],PLT:[0.34,0.29,0.23]};
+const agPool=new Pool(antigenGeometry(),MAXC*32);
+const abPool=new Pool(igMGeometry(),3200);
+const pltPool=new Pool(plateletGeometry(),60);
+
+/* ================= post-processing ================= */
+const quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2)); const pScene=new THREE.Scene(); pScene.add(quad); const pCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+const VQ=`varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }`;
+const FIN=`vec3 fin(vec3 c){ if(!(c.r==c.r)||!(c.g==c.g)||!(c.b==c.b)) return vec3(0.0); return clamp(c,vec3(0.0),vec3(24.0)); }`;
+const downMat=new THREE.ShaderMaterial({uniforms:{tSrc:{value:null},uTx:{value:new THREE.Vector2()}},vertexShader:VQ,depthTest:false,depthWrite:false,
+  fragmentShader:`uniform sampler2D tSrc; uniform vec2 uTx; varying vec2 vUv; ${FIN}
+  void main(){ vec3 c=fin(texture2D(tSrc,vUv+uTx*vec2(-1.,-1.)).rgb)+fin(texture2D(tSrc,vUv+uTx*vec2(1.,-1.)).rgb)+fin(texture2D(tSrc,vUv+uTx*vec2(-1.,1.)).rgb)+fin(texture2D(tSrc,vUv+uTx*vec2(1.,1.)).rgb); gl_FragColor=vec4(c*0.25,1.0); }`});
+const blurMat=new THREE.ShaderMaterial({uniforms:{tSrc:{value:null},uDir:{value:new THREE.Vector2()}},vertexShader:VQ,depthTest:false,depthWrite:false,
+  fragmentShader:`uniform sampler2D tSrc; uniform vec2 uDir; varying vec2 vUv;
+  void main(){ vec3 c=texture2D(tSrc,vUv).rgb*0.227;
+   c+=(texture2D(tSrc,vUv+uDir*1.385).rgb+texture2D(tSrc,vUv-uDir*1.385).rgb)*0.316;
+   c+=(texture2D(tSrc,vUv+uDir*3.231).rgb+texture2D(tSrc,vUv-uDir*3.231).rgb)*0.070;
+   gl_FragColor=vec4(c,1.0); }`});
+const compMat=new THREE.ShaderMaterial({
+  uniforms:{tScene:{value:null},tQ:{value:null},tE:{value:null},uRes:{value:new THREE.Vector2()},uFocus:{value:30},uDof:{value:0.5},uTime:{value:0},uCA:{value:0.9},uExp:{value:0.88},uGrain:{value:1}},
+  vertexShader:VQ, depthTest:false, depthWrite:false,
+  fragmentShader:`uniform sampler2D tScene,tQ,tE; uniform vec2 uRes; uniform float uFocus,uDof,uTime,uCA,uExp,uGrain; varying vec2 vUv; ${FIN}
+  vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+  void main(){
+    vec2 c=vUv-0.5; float r2=dot(c,c);
+    vec4 s=texture2D(tScene,vUv);
+    vec2 off=c*r2*uCA*0.02;
+    vec3 col=fin(vec3(texture2D(tScene,vUv-off).r, s.g, texture2D(tScene,vUv+off).b));
+    float depth=(s.a==s.a)?s.a*160.0:uFocus;
+    float coc=clamp(abs(depth-uFocus)/(uFocus*0.8+5.0),0.0,1.0)*uDof;
+    vec3 bq=texture2D(tQ,vUv).rgb, be=texture2D(tE,vUv).rgb;
+    col=mix(col,bq,smoothstep(0.05,0.9,coc));
+    col+=max(bq-vec3(0.6),0.0)*0.45+max(be-vec3(0.3),0.0)*0.55+be*0.06;
+    col=aces(col*uExp);
+    float vig=smoothstep(0.98,0.22,length(c*vec2(1.0,0.92))*1.15);
+    col*=mix(0.5,1.0,vig);
+    col=pow(col,vec3(0.4545));
+    col+=(hash(vUv*uRes+fract(uTime)*91.7)-0.5)*0.03*uGrain;
+    gl_FragColor=vec4(col,1.0);
+  }`});
+let rtScene,rtH,rtQ1,rtQ2,rtE1,rtE2, renderScale=0.85, useMSAA=false, dpr=1, W=1,H=1;
+function mkRT(w,h,msaa){
+  const o={type:rtType,format:THREE.RGBAFormat,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,depthBuffer:true,stencilBuffer:false};
+  if(msaa && isGL2 && THREE.WebGLMultisampleRenderTarget){ const t=new THREE.WebGLMultisampleRenderTarget(w,h,o); t.samples=4; return t; }
+  return new THREE.WebGLRenderTarget(w,h,o);
+}
+function buildRTs(){
+  [rtScene,rtH,rtQ1,rtQ2,rtE1,rtE2].forEach(r=>r&&r.dispose());
+  const w=Math.max(2,Math.floor(W*dpr*renderScale)), h=Math.max(2,Math.floor(H*dpr*renderScale));
+  rtScene=mkRT(w,h,useMSAA);
+  const o={type:rtType,format:THREE.RGBAFormat,minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter,depthBuffer:false};
+  rtH=new THREE.WebGLRenderTarget(w>>1,h>>1,o);
+  rtQ1=new THREE.WebGLRenderTarget(w>>2,h>>2,o); rtQ2=new THREE.WebGLRenderTarget(w>>2,h>>2,o);
+  rtE1=new THREE.WebGLRenderTarget(w>>3,h>>3,o); rtE2=new THREE.WebGLRenderTarget(w>>3,h>>3,o);
+  compMat.uniforms.uRes.value.set(w,h);
+}
+function pass(mat,target){ quad.material=mat; renderer.setRenderTarget(target); renderer.render(pScene,pCam); }
+function post(){
+  const src=rtScene.texture;
+  downMat.uniforms.tSrc.value=src; downMat.uniforms.uTx.value.set(0.5/rtScene.width,0.5/rtScene.height); pass(downMat,rtH);
+  downMat.uniforms.tSrc.value=rtH.texture; downMat.uniforms.uTx.value.set(0.5/rtH.width,0.5/rtH.height); pass(downMat,rtQ1);
+  blurMat.uniforms.tSrc.value=rtQ1.texture; blurMat.uniforms.uDir.value.set(1/rtQ1.width,0); pass(blurMat,rtQ2);
+  blurMat.uniforms.tSrc.value=rtQ2.texture; blurMat.uniforms.uDir.value.set(0,1/rtQ1.height); pass(blurMat,rtQ1);
+  downMat.uniforms.tSrc.value=rtQ1.texture; downMat.uniforms.uTx.value.set(0.5/rtQ1.width,0.5/rtQ1.height); pass(downMat,rtE1);
+  blurMat.uniforms.tSrc.value=rtE1.texture; blurMat.uniforms.uDir.value.set(1.5/rtE1.width,0); pass(blurMat,rtE2);
+  blurMat.uniforms.tSrc.value=rtE2.texture; blurMat.uniforms.uDir.value.set(0,1.5/rtE1.height); pass(blurMat,rtE1);
+  compMat.uniforms.tScene.value=src; compMat.uniforms.tQ.value=rtQ1.texture; compMat.uniforms.tE.value=rtE1.texture;
+  pass(compMat,null);
+}
+
+/* ================= simulation ================= */
+const AGS=['A','B','D'];
+const BRIDGE={A:1,B:1,D:0.3};   // RhD sites are ~30–100× sparser than A/B antigens, so anti-D bridges cells less often
+const S={ donor:{abo:'A',rh:true}, anti:{A:true,B:true,D:true}, speed:1, paused:false, t:0, flow:1, igmCap:3,
+  follow:-1, NC:220, flowHist:[], stats:{bound:0,clump:0,largest:0,lodged:0,bonds:0,by:{A:0,B:0,D:0}} };
+const cells=[];
+for(let i=0;i<MAXC;i++) cells.push({i,p:new V3(),v:new V3(),q:new Qt(),has:{A:0,B:0,D:0,H:0},mk:[],ab:[],igm:{A:0,B:0,D:0},bonds:[],lodged:false,sq:1,clSize:1,hl:0,occ:0,active:false,k1o:null,k1d:99,k2o:null,k2d:99});
+let bonds=[], abs=[], respawnQ=[];
+const platelets=[], flashes=[];
+const ROCK={x:0,z:0,amp:0,th:0};
+
+function antigensFor(d){
+  const L=[], add=(t,n)=>{for(let k=0;k<n;k++)L.push(t);};
+  if(d.abo==='A') add('A',16); else if(d.abo==='B') add('B',16);
+  else if(d.abo==='AB'){add('A',12);add('B',12);}            // type O: no A or B antigens
+  if(d.rh) add('D',6);
+  return L;
+}
+function surfacePoint(){
+  const x=Math.sqrt(rand())*0.96, phi=rand()*TAU, side=rand()<0.5?1:-1, r=x*R0;
+  const g=rbcT(x)/2, e=0.01;
+  const gp=(rbcT(Math.min(1,x+e))-rbcT(Math.max(0,x-e)))/2/(2*e*R0);
+  const rh=new V3(Math.cos(phi),0,Math.sin(phi));
+  return {p:new V3(rh.x*r,side*g,rh.z*r), n:rh.clone().multiplyScalar(-gp).add(new V3(0,side,0)).normalize()};
+}
+const randQ=q=>q.setFromAxisAngle(new V3(rand()-0.5,rand()-0.5,rand()-0.5).normalize(),rand()*TAU);
+function flowV(x,r){ const R=vesselR(x), t=clamp((x-XT0)/(XT1-XT0),0,1), vmax=10*S.flow*(1+1.6*t), rr=Math.min(1,r/R); return vmax*(1-rr*rr); }
+function placeUpstream(c){
+  const x=X0+rand()*4, a=rand()*TAU, r=Math.sqrt(rand())*(VR-3.6);
+  c.p.set(x,r*Math.cos(a),r*Math.sin(a)); c.v.set(flowV(x,r),0,0); randQ(c.q);
+}
+function releaseCell(c){
+  c.ab.forEach(b=>{ abPool.free(b.slot); if(b.mk) b.mk.occ=false; }); c.ab=[]; c.igm.A=c.igm.B=c.igm.D=0;
+  c.bonds.slice().forEach(removeBond);
+  c.lodged=false; c.sq=1; c.mk.forEach(m=>m.occ=false);
+}
+function removeBond(b){
+  abPool.free(b.slot);
+  b.a.bonds.splice(b.a.bonds.indexOf(b),1); b.b.bonds.splice(b.b.bonds.indexOf(b),1);
+  const k=bonds.indexOf(b); if(k>=0) bonds.splice(k,1);
+}
+function typeCells(){
+  agPool.clear();
+  const list=antigensFor(S.donor);
+  for(let i=0;i<MAXC;i++){
+    const c=cells[i]; c.mk=[]; c.has={A:0,B:0,D:0,H:0}; c.active=i<S.NC;
+    if(!c.active) continue;
+    list.forEach(t=>{
+      const sp=surfacePoint(), slot=agPool.alloc();
+      const m={t,lp:sp.p,n:sp.n,occ:false,slot};
+      agPool.set(slot,i,sp.p,sp.n,COL[t], t==='D'?1.55:(t==='H'?0.9:1.15),0);
+      c.mk.push(m); c.has[t]++;
+    });
+  }
+  agPool.upload(true);
+}
+function placeInWell(p){ const a=rand()*TAU, r=Math.sqrt(rand())*(RW-5); p.set(r*Math.cos(a),0,r*Math.sin(a)); return p; }
+function resetWorld(){
+  bonds=[]; abs=[]; respawnQ=[]; flashes.length=0;
+  abPool.clear();
+  for(const c of cells){ c.ab=[]; c.bonds=[]; c.igm.A=c.igm.B=c.igm.D=0; c.lodged=false; c.sq=1; c.hl=0; c.clSize=1; c.occ=0; c.k1o=c.k2o=null; c.k1d=c.k2d=99; }
+  typeCells();
+  for(let i=0;i<S.NC;i++){ const c=cells[i];
+    if(SCENE==='vessel'){
+      const x=X0+rand()*(XEND-X0-6), R=vesselR(x), a=rand()*TAU, rmax=Math.max(0.3,R-3.2-Math.max(0,7-R)*0.45), r=Math.sqrt(rand())*rmax;
+      c.p.set(x,r*Math.cos(a),r*Math.sin(a)); c.v.set(flowV(x,r),0,0);
+    }else{ placeInWell(c.p); c.p.y=R0+rand()*(WH-R0-3); c.v.set(0,0,0); }
+    randQ(c.q);
+  }
+  S.t=0; S.flow=1; S.flowHist=[];
+  pltPool.clear(); platelets.length=0;
+  if(SCENE==='vessel') for(let k=0;k<12;k++){ const s=pltPool.alloc(), x=X0+rand()*(XT0-X0), a=rand()*TAU, r=VR-2.2-rand()*3.2;
+    const pl={slot:s,p:new V3(x,r*Math.cos(a),r*Math.sin(a)),ax:new V3(rand()-0.5,rand()-0.5,rand()-0.5).normalize(),w:new V3(rand()-0.5,rand()-0.5,rand()-0.5).normalize(),wr:0.3+rand()*0.6};
+    platelets.push(pl); pltPool.set(s,-1,pl.p,pl.ax,COL.PLT,0.8+rand()*0.45,0); }
+  pltPool.upload(true);
+  const n=S.NC<200?40:55;
+  AGS.forEach(t=>{ if(S.anti[t]) for(let k=0;k<n;k++) spawnAb(t,true); });
+  abPool.upload(true);
+  if(S.follow>=0) pickFollow();
+}
+function spawnAb(t,initial){
+  const slot=abPool.alloc(); if(slot<0) return;
+  const p=new V3();
+  if(SCENE==='vessel'){ const x=initial? X0-6+rand()*22 : X0+rand()*3, a=rand()*TAU, r=Math.sqrt(rand())*(VR-0.8); p.set(x,r*Math.cos(a),r*Math.sin(a)); }
+  else{ placeInWell(p); p.y=1+rand()*(WH-2); }
+  const ax=new V3(rand()-0.5,rand()-0.5,rand()-0.5).normalize();
+  abs.push({t,slot,p,ax,w:new V3(rand()-0.5,rand()-0.5,rand()-0.5).normalize(),wr:0.6+rand()*1.4,state:0,cell:null,mk:null,dt:0,from:new V3(),fromAx:new V3()});
+  abPool.set(slot,-1,p,ax,COL[t],1,0);
+}
+
+/* ---------- spatial hash ---------- */
+const HB=4096, CS=8, head=new Int32Array(HB), next=new Int32Array(MAXC);
+const hkey=(ix,iy,iz)=>(((ix+97)*73856093)^((iy+97)*19349663)^((iz+97)*83492791))&(HB-1);
+function buildHash(){ head.fill(-1); for(let i=0;i<S.NC;i++){ const p=cells[i].p; const k=hkey(Math.floor(p.x/CS),Math.floor(p.y/CS),Math.floor(p.z/CS)); next[i]=head[k]; head[k]=i; } }
+function near(p,fn){ const ix=Math.floor(p.x/CS),iy=Math.floor(p.y/CS),iz=Math.floor(p.z/CS);
+  for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)for(let c=-1;c<=1;c++){ let j=head[hkey(ix+a,iy+b,iz+c)]; while(j>=0){ fn(cells[j]); j=next[j]; } } }
+
+const tmpV=new V3(), tmpV2=new V3(), tmpQ=new Qt(), qId=new Qt(), yAx=new V3(), upV=new V3(), qPara=new Qt().setFromUnitVectors(new V3(0,1,0),new V3(1,0,0));
+function markerWorld(c,m,off,out,outAx){ out.copy(m.n).multiplyScalar(off).add(m.lp).applyQuaternion(c.q).add(c.p); if(outAx) outAx.copy(m.n).applyQuaternion(c.q); return out; }
+
+// gentle rocking of the typing slide: plasma sloshes back and forth, strongest at the top of the fluid
+function updRock(){ const amp=9*Math.sin(TAU*S.t/5); ROCK.th=0.22*S.t; ROCK.amp=amp; ROCK.x=amp*Math.cos(ROCK.th); ROCK.z=amp*Math.sin(ROCK.th); }
+
+function moveVessel(dt){
+  const kRelax=1-Math.exp(-4*dt);
+  for(let i=0;i<S.NC;i++){
+    const c=cells[i];
+    if(c.lodged){ c.v.set(0,0,0); continue; }
+    const r=Math.hypot(c.p.y,c.p.z)+1e-6, R=vesselR(c.p.x), vx=flowV(c.p.x,r), narrow=R<8.5;
+    const lift=-(narrow?2.2:0.35)*(r/R)*(0.3+0.7*S.flow);
+    c.v.x+=(vx-c.v.x)*kRelax; c.v.y+=(lift*c.p.y/r-c.v.y)*kRelax; c.v.z+=(lift*c.p.z/r-c.v.z)*kRelax;
+    if(c.bonds.length===0){
+      if(narrow){ c.q.slerp(qPara,1-Math.exp(-3*dt)); }
+      else{ const g=2*10*S.flow*r/(R*R); tmpV.set(0,-c.p.z/r,c.p.y/r); tmpQ.setFromAxisAngle(tmpV,0.5*g*dt); c.q.premultiply(tmpQ).normalize(); }
+    }
+    const sqT=(c.bonds.length===0)?clamp((R-0.9)/R0,0.58,1):1; c.sq+=(sqT-c.sq)*(1-Math.exp(-5*dt));
+  }
+}
+function moveWell(dt){
+  const kRelax=1-Math.exp(-3*dt), bs=0.18*Math.sqrt(dt);
+  for(let i=0;i<S.NC;i++){
+    const c=cells[i], f=clamp(c.p.y/WH,0,1);
+    const sink=-Math.min(1.3,0.12*Math.pow(c.clSize||1,0.9));  // single cells stay suspended; bigger clumps sink much faster
+    c.v.x+=(ROCK.x*f-c.v.x)*kRelax; c.v.z+=(ROCK.z*f-c.v.z)*kRelax; c.v.y+=(sink-c.v.y)*kRelax;
+    c.p.x+=gauss()*bs; c.p.y+=gauss()*bs; c.p.z+=gauss()*bs;
+    yAx.set(0,1,0).applyQuaternion(c.q);
+    if(c.p.y<6){ upV.set(0,yAx.y>=0?1:-1,0); tmpQ.setFromUnitVectors(yAx,upV); qId.set(0,0,0,1).slerp(tmpQ,1-Math.exp(-1.6*dt)); c.q.premultiply(qId).normalize(); }
+    else if(c.bonds.length===0){ tmpV.set(-Math.sin(ROCK.th),0,Math.cos(ROCK.th)); tmpQ.setFromAxisAngle(tmpV,0.5*ROCK.amp/WH*dt); c.q.premultiply(tmpQ).normalize(); }
+    c.sq=1;
+  }
+}
+const RC=2.95;
+function stepCells(dt){
+  buildHash();
+  if(SCENE==='vessel') moveVessel(dt); else moveWell(dt);
+  // IgM bridges act as springs
+  for(const b of bonds){
+    tmpV.subVectors(b.b.p,b.a.p); const L=tmpV.length()||1e-4; tmpV.multiplyScalar(1/L);
+    const rel=tmpV2.subVectors(b.b.v,b.a.v).dot(tmpV);
+    const f=(3.5*(L-b.rest)+1.2*rel)*dt;
+    if(!b.a.lodged) b.a.v.addScaledVector(tmpV,f*(b.b.lodged?1:0.5));
+    if(!b.b.lodged) b.b.v.addScaledVector(tmpV,-f*(b.a.lodged?1:0.5));
+  }
+  for(let i=0;i<S.NC;i++){ const c=cells[i]; if(!c.lodged) c.p.addScaledVector(c.v,dt); }
+  // collisions, contacts (for membrane flattening) and new antibody bridges
+  for(let i=0;i<S.NC;i++){ const c=cells[i]; c.k1o=null; c.k1d=99; c.k2o=null; c.k2d=99; }
+  for(let i=0;i<S.NC;i++){
+    const a=cells[i];
+    near(a.p,(b)=>{
+      if(b.i<=a.i) return;
+      tmpV.subVectors(b.p,a.p); const d2=tmpV.lengthSq(); if(d2>61) return;
+      const d=Math.sqrt(d2)||1e-4;
+      addContact(a,b,d); addContact(b,a,d);
+      if(d<2*RC){
+        const push=2*RC-d; tmpV.multiplyScalar(1/d);
+        const wa=a.lodged?0:(b.lodged?1:0.5), wb=b.lodged?0:(a.lodged?1:0.5);
+        a.p.addScaledVector(tmpV,-push*wa); b.p.addScaledVector(tmpV,push*wb);
+        const rv=tmpV2.subVectors(b.v,a.v).dot(tmpV); if(rv<0){ a.v.addScaledVector(tmpV,rv*wa); b.v.addScaledVector(tmpV,-rv*wb); }
+      }
+      if(d<6.1 && a.bonds.length<3 && b.bonds.length<3 && !a.bonds.some(x=>x.a===b||x.b===b)){
+        for(const t of AGS){                       // each antibody gets its own chance to bridge this pair
+          if(!S.anti[t]) continue;
+          const na=a.igm[t], nb=b.igm[t];
+          if(!((na>0&&b.has[t])||(nb>0&&a.has[t]))) continue;
+          if(rand()<(SCENE==='well'?0.045:0.017)*BRIDGE[t]*(na+nb)*S._dt){ addBond(a,b,t,d); break; }
+        }
+      }
+    });
+  }
+  // boundaries
+  for(let i=0;i<S.NC;i++){
+    const c=cells[i];
+    if(SCENE==='vessel'){
+      const R=vesselR(c.p.x), r=Math.hypot(c.p.y,c.p.z);
+      const rmax=Math.max(0.3,R-3.2-Math.max(0,7-R)*0.45)*(c.lodged?1.6:1);
+      if(r>rmax){ const k=rmax/r; c.p.y*=k; c.p.z*=k; }
+      if(c.p.x>XEND){ if(c.bonds.length||c.ab.length) releaseCell(c); placeUpstream(c); if(S.follow===c.i) pickFollow(); }
+      if(c.p.x<X0-12) c.p.x=X0-12;
+    }else{
+      yAx.set(0,1,0).applyQuaternion(c.q); const flat=Math.abs(yAx.y);
+      const ymin=lerp(R0*0.92,1.38,flat);
+      if(c.p.y<ymin){ c.p.y=ymin; if(c.v.y<0) c.v.y=0; }
+      if(c.p.y>WH-2.4){ c.p.y=WH-2.4; if(c.v.y>0) c.v.y=0; }
+      const r=Math.hypot(c.p.x,c.p.z), rmax=RW-lerp(1.6,3.9,flat);
+      if(r>rmax){ const k=rmax/r; c.p.x*=k; c.p.z*=k; const vr=(c.v.x*c.p.x+c.v.z*c.p.z)/rmax; if(vr>0){ c.v.x-=vr*c.p.x/rmax; c.v.z-=vr*c.p.z/rmax; } }
+    }
+  }
+}
+function addContact(c,o,d){ if(d<c.k1d){ c.k2d=c.k1d; c.k2o=c.k1o; c.k1d=d; c.k1o=o; } else if(d<c.k2d){ c.k2d=d; c.k2o=o; } }
+function addBond(a,b,t,d){
+  const slot=abPool.alloc(); if(slot<0) return;
+  const bd={a,b,t,rest:Math.max(5.7,Math.min(6.4,d)),slot};
+  abPool.set(slot,-1,a.p,Y,COL[t],1,0.9);
+  bonds.push(bd); a.bonds.push(bd); b.bonds.push(bd);
+}
+function stepAntibodies(dt){
+  const bs=Math.sqrt(dt)*(SCENE==='vessel'?0.9:1.1);
+  for(let k=abs.length-1;k>=0;k--){
+    const ab=abs[k];
+    if(ab.state===0){
+      if(!S.anti[ab.t]){ abPool.free(ab.slot); abs.splice(k,1); continue; }
+      if(SCENE==='vessel'){ ab.p.x+=flowV(ab.p.x,Math.hypot(ab.p.y,ab.p.z))*dt; }
+      else{ const f=clamp(ab.p.y/WH,0,1); ab.p.x+=ROCK.x*f*dt; ab.p.z+=ROCK.z*f*dt; }
+      ab.p.x+=gauss()*bs; ab.p.y+=gauss()*bs; ab.p.z+=gauss()*bs;
+      // drift toward a nearby cell that carries the matching antigen
+      let best=null, bd=1e9;
+      near(ab.p,(c)=>{
+        if(!c.active||!c.has[ab.t]||c.igm[ab.t]>=S.igmCap) return;
+        const d=c.p.distanceToSquared(ab.p); if(d<bd&&d<110){ bd=d; best=c; }
+      });
+      if(best){
+        const d=Math.sqrt(bd);
+        if(d<4.6){
+          let mk=null, md=1e9;
+          for(const m of best.mk){ if(m.t!==ab.t||m.occ) continue; markerWorld(best,m,0,tmpV); const dd=tmpV.distanceToSquared(ab.p); if(dd<md){md=dd;mk=m;} }
+          if(mk){ mk.occ=true; ab.state=1; ab.cell=best; ab.mk=mk; ab.dt=0; ab.from.copy(ab.p); ab.fromAx.copy(ab.ax); }
+        }else{ tmpV.subVectors(best.p,ab.p).multiplyScalar(1.8*dt/d); ab.p.add(tmpV); }
+      }
+      if(SCENE==='vessel'){
+        const R=vesselR(ab.p.x), rr=Math.hypot(ab.p.y,ab.p.z); if(rr>R-0.7){ const s=(R-0.7)/rr; ab.p.y*=s; ab.p.z*=s; }
+        if(ab.p.x>XT0+6){ const a=rand()*TAU, rn=Math.sqrt(rand())*(VR-0.8); ab.p.set(X0+rand()*3,rn*Math.cos(a),rn*Math.sin(a)); }
+      }else{
+        ab.p.y=clamp(ab.p.y,0.6,WH-0.6);
+        const r=Math.hypot(ab.p.x,ab.p.z); if(r>RW-0.6){ const s=(RW-0.6)/r; ab.p.x*=s; ab.p.z*=s; }
+      }
+      tmpQ.setFromAxisAngle(ab.w,ab.wr*dt); ab.ax.applyQuaternion(tmpQ);
+      abPool.setP(ab.slot,ab.p,ab.ax);
+    }else{
+      const c=ab.cell;
+      ab.dt+=dt/0.5; const e=ab.dt>=1?1:1-Math.pow(1-ab.dt,3);
+      markerWorld(c,ab.mk,0.27,tmpV,tmpV2);
+      ab.p.lerpVectors(ab.from,tmpV,e); ab.ax.lerpVectors(ab.fromAx,tmpV2,e).normalize();
+      abPool.setP(ab.slot,ab.p,ab.ax);
+      if(ab.dt>=1){
+        abPool.set(ab.slot,c.i,ab.mk.n.clone().multiplyScalar(0.27).add(ab.mk.lp),ab.mk.n,COL[ab.t],1,1.0);
+        c.ab.push({t:ab.t,slot:ab.slot,mk:ab.mk}); c.igm[ab.t]++;
+        flashes.push(ab.slot); abs.splice(k,1);
+        respawnQ.push({t:ab.t,at:S.t+1.2+rand()*2});
+      }
+    }
+  }
+  for(let k=respawnQ.length-1;k>=0;k--){ const r=respawnQ[k]; if(S.t>=r.at){ respawnQ.splice(k,1); if(S.anti[r.t]) spawnAb(r.t,false); } }
+  // bridging IgM sits in the gap between the two cells it holds
+  for(const b of bonds){
+    tmpV.addVectors(b.a.p,b.b.p).multiplyScalar(0.5);
+    tmpV2.subVectors(b.b.p,b.a.p).normalize();
+    const ax=new V3(0,1,0).cross(tmpV2); if(ax.lengthSq()<1e-3) ax.set(0,0,1); ax.normalize();
+    abPool.setP(b.slot,tmpV,ax);
+  }
+  const a=abPool.sc.array;
+  for(let k=flashes.length-1;k>=0;k--){ const s=flashes[k]; a[s*2+1]*=Math.exp(-dt*2.2); if(a[s*2+1]<0.02){ a[s*2+1]=0; flashes.splice(k,1); } }
+}
+function stepPlatelets(dt){
+  for(const pl of platelets){
+    pl.p.x+=flowV(pl.p.x,Math.hypot(pl.p.y,pl.p.z))*dt;
+    if(pl.p.x>XT0) pl.p.x=X0+rand()*2;
+    tmpQ.setFromAxisAngle(pl.w,pl.wr*dt); pl.ax.applyQuaternion(tmpQ);
+    pltPool.setP(pl.slot,pl.p,pl.ax);
+  }
+}
+/* clusters (union-find over bridges); in the vessel, clumps too wide for the capillary lodge */
+const par=new Int32Array(MAXC), csz=new Int32Array(MAXC), cmax=new Float32Array(MAXC), clod=new Uint8Array(MAXC);
+const find=(i)=>{ while(par[i]!==i){ par[i]=par[par[i]]; i=par[i]; } return i; };
+function clusters(){
+  for(let i=0;i<S.NC;i++){ par[i]=i; csz[i]=0; cmax[i]=-1e9; clod[i]=0; }
+  for(const b of bonds){ const x=find(b.a.i), y=find(b.b.i); if(x!==y) par[x]=y; }
+  for(let i=0;i<S.NC;i++){ const r=find(i), c=cells[i]; csz[r]++; if(c.p.x>cmax[r]) cmax[r]=c.p.x; if(c.lodged) clod[r]=1; }
+  const vessel=SCENE==='vessel';
+  if(vessel) for(let i=0;i<S.NC;i++){ const r=find(i); if(csz[r]>=2 && !clod[r]){ const fit=1.9+1.5*Math.sqrt(csz[r]); if(vesselR(cmax[r]+2.5)<fit) clod[r]=1; } }
+  let inClump=0, largest=0, lodged=0, bound=0, nLod=0;
+  for(let i=0;i<S.NC;i++) if(cells[i].lodged) nLod++;
+  const LCAP=Math.round(S.NC*0.34);
+  for(let i=0;i<S.NC;i++){ const r=find(i), c=cells[i];
+    if(vessel&&clod[r]&&!c.lodged&&nLod<LCAP){ c.lodged=true; c.v.set(0,0,0); nLod++; }
+    c.clSize=csz[r]; if(csz[r]>=2) inClump++; if(csz[r]>largest) largest=csz[r];
+    if(c.lodged) lodged++; if(c.ab.length) bound++;
+  }
+  const st=S.stats; st.clump=inClump/S.NC; st.largest=largest>1?largest:0; st.lodged=lodged; st.bound=bound/S.NC; st.bonds=bonds.length;
+  st.by={A:0,B:0,D:0}; for(const b of bonds) st.by[b.t]++;
+}
+
+/* ================= camera ================= */
+const VIEWS={
+  vessel:{cut:{t:new V3(40,0,0),yaw:0.82,pitch:0.36,dist:128},inside:{t:new V3(34,-8,0),yaw:0.0,pitch:-0.22,dist:28}},
+  well:{cut:{t:new V3(0,3,0),yaw:0.95,pitch:0.80,dist:114},inside:{t:new V3(-6,3,-4),yaw:0.95,pitch:0.30,dist:30}}
+};
+let viewMode='cut';
+const orbit={target:VIEWS.well.cut.t.clone(),base:VIEWS.well.cut.t.clone(),yaw:0,pitch:0,dist:100,goalDist:100};
+function viewDist(m){ return VIEWS[SCENE][m].dist*(m==='cut'?clamp(1.7/Math.max(0.3,camera.aspect),1,2.2):1); }   // pull back when the stage is narrow
+function setView(m,snap){ viewMode=m; const v=VIEWS[SCENE][m]; orbit.yaw=v.yaw; orbit.pitch=v.pitch; orbit.goalDist=viewDist(m); orbit.base.copy(v.t);
+  if(snap){ orbit.dist=orbit.goalDist; orbit.target.copy(v.t); }
+  if(S.follow>=0) setFollow(-1);
+  document.getElementById('vCut').setAttribute('aria-pressed',m==='cut'); document.getElementById('vIn').setAttribute('aria-pressed',m==='inside'); }
+const FOG_V=new THREE.Color(0.17,0.105,0.045), FOG_W=new THREE.Color(0.24,0.19,0.14);
+function updateCamera(dt){
+  const goal=S.follow>=0?cells[S.follow].p:orbit.base;
+  orbit.target.lerp(goal,1-Math.exp(-(S.follow>=0?5:2.5)*dt));
+  orbit.dist=lerp(orbit.dist,orbit.goalDist,1-Math.exp(-4*dt));
+  const cp=Math.cos(orbit.pitch);
+  const pos=orbit.target.clone().add(new V3(-cp*Math.cos(orbit.yaw),Math.sin(orbit.pitch),-cp*Math.sin(orbit.yaw)).multiplyScalar(orbit.dist));
+  if(SCENE==='vessel'){
+    if(viewMode==='inside'){
+      pos.x=clamp(pos.x,X0-10,XEND-4);
+      const Rm=vesselR(pos.x)-1.4, r=Math.hypot(pos.y,pos.z); if(r>Rm){ pos.y*=Rm/r; pos.z*=Rm/r; }
+    }
+    camera.position.copy(pos); camera.lookAt(orbit.target); U.uCam.value.copy(pos);
+    U.uFog.value.copy(FOG_V); U.uFogD.value=0.0135;
+    const cut=Math.hypot(pos.y,pos.z)>vesselR(pos.x)+0.3 || pos.x<X0-16 || pos.x>XEND+30;
+    U.uCut.value=cut?1:0;
+    if(cut){
+      U.uCutDir.value.set(pos.y,pos.z).normalize();
+      const phi=Math.atan2(pos.z,pos.y); if(Math.abs(phi-capPhi)>0.01){ capPhi=phi; buildCaps(phi,Math.acos(U.uCutCos.value)); }
+      capMesh.visible=true;
+      const dT=pos.distanceTo(orbit.target);
+      U.uFogStart.value=Math.max(0,dT-VR*1.1);
+      U.uLight.value.copy(orbit.target).addScaledVector(tmpV.subVectors(pos,orbit.target).normalize(),Math.max(30,Math.min(dT,40))).add(new V3(0,10,0));
+      U.uLI.value=1.75; renderer.setClearColor(0x050202,1);
+    }else{
+      capMesh.visible=false; U.uFogStart.value=0; U.uLI.value=1.0;
+      U.uLight.value.copy(pos).add(new V3(0,1.6,0).applyQuaternion(camera.quaternion)).add(new V3(0,0,-2).applyQuaternion(camera.quaternion));
+      renderer.setClearColor(U.uFog.value,1);
+    }
+  }else{
+    if(pos.y<3) pos.y=3;
+    camera.position.copy(pos); camera.lookAt(orbit.target); U.uCam.value.copy(pos);
+    U.uCut.value=0; capMesh.visible=false;
+    U.uFog.value.copy(FOG_W); U.uFogD.value=0.006;
+    const phi=Math.atan2(pos.z,pos.x); U.uWDir.value.set(Math.cos(phi),Math.sin(phi));
+    if(Math.abs(phi-wPhi)>0.01){ wPhi=phi; buildWellCut(phi); }
+    const dT=pos.distanceTo(orbit.target);
+    U.uFogStart.value=Math.max(0,dT-40);
+    U.uLight.value.copy(orbit.target).addScaledVector(tmpV.subVectors(pos,orbit.target).setY(0).normalize(),24).add(new V3(0,40,0));
+    U.uLI.value=1.7; renderer.setClearColor(0x0b0707,1);
+  }
+  compMat.uniforms.uFocus.value=pos.distanceTo(orbit.target);
+  compMat.uniforms.uDof.value=S.follow>=0?0.95:(SCENE==='well'?0.35:0.6);
+}
+function pickFollow(){
+  const ref=orbit.target; let best=-1,bd=1e9;
+  for(let i=0;i<S.NC;i++){ const c=cells[i]; if(c.lodged) continue; if(SCENE==='vessel'&&(c.p.x<X0+6||c.p.x>XT0-20)) continue;
+    const d=c.p.distanceToSquared(ref)+(c.ab.length?-30:0); if(d<bd){bd=d;best=i;} }
+  setFollow(best);
+}
+function setFollow(i){
+  if(S.follow>=0) cells[S.follow].hl=0;
+  S.follow=i; if(i>=0){ cells[i].hl=1; orbit.goalDist=viewMode==='cut'?17:13; } else orbit.goalDist=viewDist(viewMode);
+  const b=document.getElementById('btnFollow'); b.setAttribute('aria-pressed',i>=0?'true':'false'); b.textContent=i>=0?'Stop following':'Follow a cell';
+  document.getElementById('trackCard').hidden=i<0;
+}
+/* pointer controls */
+const ptrs=new Map(); let dragMoved=0, pinch0=0;
+canvas.addEventListener('pointerdown',e=>{ canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); dragMoved=0; if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); } hideHint(); });
+canvas.addEventListener('pointermove',e=>{ const p=ptrs.get(e.pointerId); if(!p) return; const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY;
+  if(ptrs.size===1){ orbit.yaw+=dx*0.005; orbit.pitch=clamp(orbit.pitch+dy*0.004,SCENE==='well'?0.05:-1.25,1.35); dragMoved+=Math.abs(dx)+Math.abs(dy); }
+  else if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); if(pinch0>0){ orbit.goalDist=clamp(orbit.goalDist*pinch0/d,5,150); } pinch0=d; dragMoved+=99; } });
+const endPtr=e=>{ const had=ptrs.has(e.pointerId); ptrs.delete(e.pointerId); if(had && ptrs.size===0 && dragMoved<6 && e.type==='pointerup') pickAt(e); };
+canvas.addEventListener('pointerup',endPtr); canvas.addEventListener('pointercancel',endPtr);
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); orbit.goalDist=clamp(orbit.goalDist*Math.exp(e.deltaY*0.0012),5,150); hideHint(); },{passive:false});
+const ray=new THREE.Raycaster();
+function pickAt(e){
+  const rc=canvas.getBoundingClientRect();
+  ray.setFromCamera({x:(e.clientX-rc.left)/rc.width*2-1,y:-(e.clientY-rc.top)/rc.height*2+1},camera);
+  let best=-1,bt=1e9;
+  for(let i=0;i<S.NC;i++){ const c=cells[i]; tmpV.subVectors(c.p,ray.ray.origin); const t=tmpV.dot(ray.ray.direction); if(t<0.5) continue; const d2=tmpV.lengthSq()-t*t; if(d2<12.5 && t<bt){bt=t;best=i;} }
+  if(best>=0) setFollow(best);
+}
+let hintGone=false; function hideHint(){ if(hintGone) return; hintGone=true; const h=document.getElementById('hint'); h.style.transition='opacity .8s'; h.style.opacity='0'; }
+
+/* ================= UI ================= */
+const $=id=>document.getElementById(id);
+const TYPES=['A+','A-','B+','B-','AB+','AB-','O+','O-'];
+const typesEl=$('types');
+TYPES.forEach(t=>{ const b=document.createElement('button'); b.textContent=t.replace('-','−'); b.dataset.t=t; b.setAttribute('aria-pressed','false'); b.onclick=()=>{ setDonor(t); syncUI(); restart(); }; typesEl.appendChild(b); });
+const AB=[
+  {k:'A',name:'Anti-A',sub:'Grabs A antigens',c:'var(--antiA)'},
+  {k:'B',name:'Anti-B',sub:'Grabs B antigens',c:'var(--antiB)'},
+  {k:'D',name:'Anti-D',sub:'Grabs RhD · reacts slower',c:'var(--antiD)'},
+];
+function glyph(c){
+  let s=`<svg class="glyph" viewBox="0 0 30 30" aria-hidden="true"><g stroke="${c}" stroke-width="2.4" stroke-linecap="round" fill="none"><circle cx="15" cy="15" r="2.6" fill="${c}"/>`;
+  for(let k=0;k<5;k++){ const a=k*TAU/5-Math.PI/2, x=15+Math.cos(a)*7.5, y=15+Math.sin(a)*7.5; s+=`<path d="M${15+Math.cos(a)*3} ${15+Math.sin(a)*3}L${x} ${y}L${x+Math.cos(a-0.55)*5} ${y+Math.sin(a-0.55)*5}M${x} ${y}L${x+Math.cos(a+0.55)*5} ${y+Math.sin(a+0.55)*5}"/>`; }
+  return s+'</g></svg>';
+}
+AB.forEach(a=>{ const row=document.createElement('div'); row.className='abrow';
+  row.innerHTML=`${glyph(a.c)}<div><div class="nm">${a.name}</div><div class="sub">${a.sub}</div></div><button class="sw" role="switch" id="sw${a.k}" aria-label="${a.name}" style="--c:${a.c}"></button>`;
+  $('abrows').appendChild(row);
+  row.querySelector('button').onclick=()=>{ S.anti[a.k]=!S.anti[a.k]; syncUI(); restart(); };
+});
+function setDonor(t){ S.donor={abo:t.replace(/[+-]/,''),rh:t.endsWith('+')}; }
+function donorStr(){ return S.donor.abo+(S.donor.rh?'+':'−'); }
+const carries=t=>t==='D'?S.donor.rh:S.donor.abo.includes(t);
+function syncUI(){
+  typesEl.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',(b.dataset.t.replace('-','−')===donorStr()).toString()));
+  const ag=[], d=S.donor;
+  if(d.abo.includes('A')) ag.push(['A antigen','--antiA']); if(d.abo.includes('B')) ag.push(['B antigen','--antiB']); if(d.rh) ag.push(['RhD','--antiD']);
+  $('agline').innerHTML='Surface antigens '+(ag.length?ag.map(a=>`<span class="chip"><span class="dot" style="background:var(${a[1]})"></span>${a[0]}</span>`).join(''):'<span class="chip">None</span>');
+  AB.forEach(a=>$('sw'+a.k).setAttribute('aria-checked',S.anti[a.k]?'true':'false'));
+}
+const SCALE={
+  well:'A 92 µm patch of a typing-well floor, opened on your side. Red cells (7.8 µm) are to scale; antibodies and antigens are drawn about 50× larger. Each antigen marker stands for thousands of real ones: an A cell has about a million A antigens but only 10,000–30,000 RhD.',
+  vessel:'A 30 µm arteriole narrowing into a capillary. Red cells (7.8 µm) are to scale; antibodies and antigens are drawn about 50× larger. Each antigen marker stands for thousands of real ones: an A cell has about a million A antigens but only 10,000–30,000 RhD.'
+};
+function applyScene(){
+  const v=SCENE==='vessel';
+  wall.visible=shell.visible=v; pltPool.mesh.visible=v; if(!v) capMesh.visible=false;
+  dish.visible=!v; shMesh.visible=!v;
+  $('scVessel').setAttribute('aria-pressed',v); $('scWell').setAttribute('aria-pressed',!v);
+  $('lgPlt').hidden=!v;
+  $('scaleTxt').textContent=SCALE[SCENE];
+  $('flowRow').hidden=!v;
+  $('vCut').textContent=v?'Cutaway':'Overview'; $('vIn').textContent=v?'Inside':'Close-up';
+  canvas.setAttribute('aria-label',v?'3D simulation of red blood cells and antibodies flowing in a blood vessel':'3D simulation of red blood cells and antibodies mixing in a blood typing well');
+}
+function setScene(s){ if(s===SCENE) return; if(S.follow>=0) setFollow(-1); SCENE=s; applyScene(); restart(); setView('cut',true); }
+$('scWell').onclick=()=>setScene('well');
+$('scVessel').onclick=()=>setScene('vessel');
+function restart(){ resetWorld(); clusters(); updateStage(true); }
+$('btnRun').onclick=restart;
+const btnPause=$('btnPause');
+btnPause.onclick=()=>{ S.paused=!S.paused; btnPause.setAttribute('aria-pressed',S.paused); btnPause.textContent=S.paused?'Play':'Pause'; };
+document.querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{ S.speed=+b.dataset.sp; document.querySelectorAll('[data-sp]').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
+$('btnFollow').onclick=()=>{ if(S.follow>=0) setFollow(-1); else pickFollow(); };
+$('vCut').onclick=()=>setView('cut');
+$('vIn').onclick=()=>setView('inside');
+window.addEventListener('keydown',e=>{ if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT') return; if(e.code==='Space'){ e.preventDefault(); btnPause.click(); } if(e.key==='f'||e.key==='F') $('btnFollow').click(); });
+
+/* ---------- readouts ---------- */
+const stageEl={pill:$('pill'),pillTxt:$('pillTxt'),title:$('stageTitle'),text:$('stageText')};
+let lastStage='';
+const joinNames=a=>a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];
+const cap1=s=>s.charAt(0).toUpperCase()+s.slice(1);
+function updateStage(force){
+  const st=S.stats, on=AGS.filter(t=>S.anti[t]), hit=on.filter(carries);
+  const names=joinNames(hit.map(t=>'anti-'+t)), verb=hit.length>1?'are':'is';
+  let key,cls,pill,title,text;
+  if(!on.length){ key='none'; cls='ok'; pill='No antibodies'; title='Nothing added yet'; text='Turn on an antibody to mix it with these red blood cells.'; }
+  else if(!hit.length){ key='neg'; cls='ok'; pill='No reaction'; title='The antibodies find nothing to grab'; text='Each antibody fits only one antigen, and these cells carry none of the matching ones. The antibodies drift past without sticking, so the cells stay separate. No clumps means a negative result.'; }
+  else if(SCENE==='vessel'&&S.flow<0.55){ key='occl'; cls='bad'; pill='Vessel blocked'; title='Clumps are jamming the narrowing'; text=`Clumped cells are too wide to fit into the capillary, so they pile up where the vessel narrows. Flow past the blockage is down to ${Math.round(S.flow*100)}%. In a body, this is part of why a mismatched transfusion is dangerous.`; }
+  else if(SCENE==='well'&&st.largest>=8){ key='settle'; cls='warn'; pill='Clumps settling'; title='Heavy clumps are sinking'; text='Big clumps are heavier than single cells, so they drop to the bottom of the well first. On a real typing slide this is the grainy, speckled look of a positive result.'; }
+  else if(st.bonds>0){ key='agg'; cls='warn'; pill='Agglutination'; title=`${cap1(names)} ${verb} clumping the cells`; text='Each antibody here has 10 binding tips, so one antibody can grab antigens on two cells at once and tie them together. More bridges form and the cells pile into clumps. Clumping means the cells carry that antigen.'+(hit.includes('D')?' Anti-D typing reagent is made in this large 10-tip form so it can clump Rh+ cells, but RhD sites are far sparser than A or B antigens, so anti-D clumps form more slowly and stay smaller.':''); }
+  else if(st.bound>0){ key='bind'; cls='warn'; pill='Binding'; title=`${cap1(names)} ${verb} locking on`; text='Each antibody\'s tips fit only the antigen it was made for, like a key in a lock. Once antibodies are stuck to the cells, they can start tying cells together.'; }
+  else { key='mix'; cls=''; pill='Mixing'; title='Antibodies are spreading through the sample'; text=SCENE==='vessel'?'The antibodies drift in with the plasma. Watch for them to land on matching antigens.':'The slide rocks gently to mix the antibodies through the sample. Watch for them to land on matching antigens.'; }
+  if(force||key!==lastStage){ lastStage=key; stageEl.pill.className='stage-pill '+cls; stageEl.pillTxt.textContent=pill; stageEl.title.textContent=title; }
+  stageEl.text.textContent=text;
+  updateResults();
+}
+function results(){
+  const out={};
+  AGS.forEach(t=>{ out[t]=!S.anti[t]?'off':(S.stats.by[t]>=6?'pos':(!carries(t)&&S.t>6?'neg':'wait')); });
+  return out;
+}
+const RS={off:'Not added',wait:'Watching…',neg:'− No clumps',pos:'+ Clumps'};
+const CV={A:'var(--antiA)',B:'var(--antiB)',D:'var(--antiD)'};
+function updateResults(){
+  const r=results();
+  const html=AGS.map(t=>`<div class="rrow"><span class="dot" style="background:${CV[t]}"></span><span class="rn">Anti-${t}</span><span class="rs ${r[t]}" style="--c:${CV[t]}">${RS[r[t]]}</span></div>`).join('');
+  const res=$('res'); if(res._h!==html){ res.innerHTML=html; res._h=html; }
+  const vals=AGS.map(t=>r[t]); let reading;
+  if(vals.every(v=>v==='off')) reading='Turn on anti-A, anti-B and anti-D to type this sample.';
+  else if(vals.includes('off')) reading='Add all three antibodies to read the full blood type.';
+  else if(vals.includes('wait')) reading='Keep watching. Clumps take a few seconds to form.';
+  else{
+    const pos=AGS.filter(t=>r[t]==='pos');
+    let abo=(r.A==='pos'?'A':'')+(r.B==='pos'?'B':''); if(!abo) abo='O';
+    const type=abo+(r.D==='pos'?'+':'−');
+    reading=pos.length?`Clumps with ${joinNames(pos.map(t=>'anti-'+t))}${pos.length===1?' only':''}, so this sample is <b>type ${type}</b>.`:`No clumps with any antibody, so this sample is <b>type ${type}</b>.`;
+  }
+  const rd=$('reading'); if(rd._h!==reading){ rd.innerHTML=reading; rd._h=reading; }
+  $('resNote').hidden=vals.filter(v=>v!=='off').length<2;
+}
+const spark=$('spark'), sctx=spark.getContext('2d');
+function drawSpark(){
+  if(SCENE!=='vessel') return;
+  const w=spark.width,h=spark.height,hist=S.flowHist; sctx.clearRect(0,0,w,h);
+  sctx.strokeStyle='rgba(255,214,200,.12)'; sctx.lineWidth=1; sctx.setLineDash([4,6]); sctx.beginPath(); sctx.moveTo(0,h*0.5); sctx.lineTo(w,h*0.5); sctx.stroke(); sctx.setLineDash([]);
+  if(hist.length<2) return;
+  const n=120, x0=w-(hist.length-1)/(n-1)*w;
+  sctx.beginPath(); hist.forEach((v,k)=>{ const x=x0+k/(n-1)*w, y=4+(1-v)*(h-10); k?sctx.lineTo(x,y):sctx.moveTo(x,y); });
+  const last=hist[hist.length-1], col=last<0.5?'#ff6152':last<0.85?'#f2c53c':'#8edb9f';
+  sctx.strokeStyle=col; sctx.lineWidth=3; sctx.stroke();
+  sctx.lineTo(w,h); sctx.lineTo(x0,h); sctx.closePath(); const g=sctx.createLinearGradient(0,0,0,h); g.addColorStop(0,col+'40'); g.addColorStop(1,col+'00'); sctx.fillStyle=g; sctx.fill();
+  sctx.beginPath(); sctx.arc(w-3,4+(1-last)*(h-10),4,0,TAU); sctx.fillStyle=col; sctx.fill();
+}
+function updateReadouts(){
+  const st=S.stats;
+  $('mBound').textContent=Math.round(st.bound*100)+'%'; $('bBound').style.width=(st.bound*100)+'%';
+  $('mClump').textContent=Math.round(st.clump*100)+'%'; $('bClump').style.width=(st.clump*100)+'%';
+  $('mLargest').textContent=st.largest+(st.largest===1?' cell':' cells');
+  $('mFlow').textContent=Math.round(S.flow*100)+'%';
+  if(S.follow>=0){ const c=cells[S.follow];
+    const ag=[]; if(c.has.A)ag.push('A'); if(c.has.B)ag.push('B'); if(c.has.D)ag.push('RhD');
+    const bound=AGS.filter(t=>c.igm[t]).map(t=>c.igm[t]+'× anti-'+t);
+    const status=c.lodged?'stuck in blockage':c.clSize>1?'in a clump of '+c.clSize:(SCENE==='well'&&c.p.y<2.6?'resting on the bottom':(SCENE==='well'?'drifting':'flowing freely'));
+    $('trackDl').innerHTML=`<dt>Antigens</dt><dd>${ag.join(', ')||'none'}</dd><dt>Antibodies on it</dt><dd>${bound.join(', ')||'none'}</dd><dt>Cross-links</dt><dd>${c.bonds.length}</dd><dt>Status</dt><dd>${status}</dd>`;
+  }
+}
+
+/* ================= main loop ================= */
+let last=performance.now(), uiT=0, clT=0, histT=0, fpsAcc=0, fpsN=0, fpsT=0, qMode='auto', stepAcc=0;
+const occDir=new V3(), occV=new V3();
+function updateOccluders(dt){
+  const k=1-Math.exp(-10*dt), f=S.follow, cp=camera.position;
+  if(f>=0) occDir.subVectors(cells[f].p,cp);
+  const L=occDir.length(); if(L>0) occDir.multiplyScalar(1/L);
+  for(let i=0;i<S.NC;i++){ const c=cells[i]; let tgt=c.p.distanceToSquared(cp)<49&&i!==f?1:0;
+    if(f>=0 && i!==f){ occV.subVectors(c.p,cp); const t=occV.dot(occDir);
+      if(t>-2 && t<L-3.5){ const perp=Math.sqrt(Math.max(0,occV.lengthSq()-t*t)); if(perp<5.6) tgt=1; } }
+    c.occ+=(tgt-c.occ)*k; if(c.occ<0.002) c.occ=0; if(c.occ>0.998) c.occ=1; }
+}
+const qInv=new Qt(), cDir=new V3();
+function contactRow(c,o,D,off){
+  if(!o||c.p.distanceToSquared(o.p)>61){ D[off]=0; D[off+1]=0; D[off+2]=0; D[off+3]=99; return; }
+  cDir.subVectors(o.p,c.p); const L=cDir.length()||1; cDir.multiplyScalar(1/L).applyQuaternion(qInv.copy(c.q).conjugate());
+  D[off]=cDir.x; D[off+1]=cDir.y; D[off+2]=cDir.z; D[off+3]=L*0.5;
+}
+function writeCellTex(){
+  const D=cellData, vessel=SCENE==='vessel';
+  for(let i=0;i<MAXC;i++){
+    const c=cells[i], o0=i*4, o1=(TEXW+i)*4, o2=(TEXW*2+i)*4, o3=(TEXW*3+i)*4, o4=(TEXW*4+i)*4, o5=(TEXW*5+i)*4;
+    if(i>=S.NC){ D[o0]=-9999; D[o0+1]=-9999; D[o0+2]=0; D[o1+3]=1; D[o2+1]=1; D[o2+2]=1; D[o4+3]=99; D[o5+3]=99; continue; }
+    D[o0]=c.p.x; D[o0+1]=c.p.y; D[o0+2]=c.p.z; D[o0+3]=0;
+    D[o1]=c.q.x; D[o1+1]=c.q.y; D[o1+2]=c.q.z; D[o1+3]=c.q.w;
+    D[o2]=0; D[o2+1]=c.sq; D[o2+2]=1/(c.sq*c.sq*0.9+0.1); D[o2+3]=1;
+    D[o3]=c.hl; D[o3+1]=c.occ;
+    if(vessel){
+      const Rv=vesselR(c.p.x), rv=Math.hypot(c.p.y,c.p.z);
+      yAx.set(0,1,0).applyQuaternion(c.q);
+      D[o3+2]=clamp((10.5-Rv)/6,0,1)*(c.bonds.length?0.3:1)*yAx.x;
+      D[o3+3]=0.35+0.65*clamp(rv/Rv,0,1);
+    }else{ D[o3+2]=0; D[o3+3]=0.3+0.7*clamp(c.p.y/WH,0,1); }
+    contactRow(c,c.k1o,D,o4); contactRow(c,c.k2o,D,o5);
+  }
+  cellTex.needsUpdate=true;
+}
+function resize(){
+  const rc=$('stage').getBoundingClientRect();
+  W=Math.max(1,rc.width); H=Math.max(1,rc.height); dpr=Math.min(window.devicePixelRatio||1,1.5);
+  renderer.setPixelRatio(dpr); renderer.setSize(W,H,false);
+  const prevD=viewDist(viewMode); camera.aspect=W/H; camera.updateProjectionMatrix(); buildRTs();
+  if(S.follow<0 && Math.abs(orbit.goalDist-prevD)<1) orbit.goalDist=viewDist(viewMode);
+}
+window.addEventListener('resize',resize);
+if(window.ResizeObserver){ let rq=0; new ResizeObserver(()=>{ cancelAnimationFrame(rq); rq=requestAnimationFrame(resize); }).observe($('stage')); }
+function setQuality(q){
+  qMode=q;
+  const presets={high:{s:1.0,msaa:true,nc:260},balanced:{s:0.8,msaa:false,nc:220},low:{s:0.6,msaa:false,nc:150},auto:{s:0.85,msaa:false,nc:220}};
+  const p=presets[q]; renderScale=p.s; useMSAA=p.msaa; buildRTs();
+  if(p.nc!==S.NC){ S.NC=p.nc; S.igmCap=p.nc<200?2:3; restart(); }
+}
+$('quality').onchange=e=>setQuality(e.target.value);
+if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) compMat.uniforms.uGrain.value=0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  fpsAcc+=dt; fpsN++; fpsT+=dt;
+  if(qMode==='auto' && fpsT>1.5){ const fps=fpsN/fpsAcc; fpsAcc=0; fpsN=0; fpsT=0;
+    if(fps<38 && renderScale>0.55){ renderScale=Math.max(0.55,renderScale-0.1); buildRTs(); }
+    else if(fps<24 && S.NC>150 && !S.autoLow){ S.autoLow=true; S.NC=150; S.igmCap=2; restart(); }
+    else if(fps>57 && renderScale<1.0){ renderScale=Math.min(1.0,renderScale+0.05); buildRTs(); } }
+  if(!S.paused){
+    stepAcc+=dt*S.speed; const h=1/60; let n=0;
+    while(stepAcc>=h && n<8){ S._dt=h; S.t+=h; updRock(); stepCells(h); stepAntibodies(h); if(SCENE==='vessel') stepPlatelets(h); stepAcc-=h; n++;
+      clT+=h; if(clT>0.1){ clT=0; clusters();
+        if(SCENE==='vessel'){ const target=1-0.94*Math.pow(clamp(S.stats.lodged/26,0,1),0.7); S.flow+=(target-S.flow)*0.3; } }
+      histT+=h; if(histT>0.5){ histT=0; S.flowHist.push(S.flow); if(S.flowHist.length>120) S.flowHist.shift(); }
+    }
+    if(n===8) stepAcc=0;
+  }
+  updateCamera(dt); updateOccluders(dt);
+  U.uTime.value=now/1000; U.uSimT.value=S.t; compMat.uniforms.uTime.value=now/1000;
+  writeCellTex();
+  abPool.upload(); if(SCENE==='vessel') pltPool.upload();
+  renderer.setRenderTarget(rtScene); renderer.clear(); renderer.render(scene,camera);
+  post();
+  uiT+=dt; if(uiT>0.2){ uiT=0; updateStage(); updateReadouts(); drawSpark(); }
+}
+
+/* ================= boot: A+ sample in a typing well with all three antibodies ================= */
+setDonor('A+'); applyScene(); syncUI();
+resize(); resetWorld(); clusters(); setView('cut',true); updateStage(true); updateReadouts();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
